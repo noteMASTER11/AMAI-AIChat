@@ -102,7 +102,7 @@ node --test tests/*.test.mjs tests/build-recovery.mjs tests/repair-control.mjs b
 
 `dashboard/qa.cjs` проверяет браузерный интерфейс; пути к Playwright и Chromium задаются в нём. `AMAI_CODEX_EXE` позволяет выбрать исполняемый файл Codex. Характеры: `bridge/personas.json`. Автозагрузка Windows не добавляется. Сборочные `Scripts/`, `dashboard/dist/`, зависимости, игровые журналы, копии файлов и авторизация в Git не включаются.
 
-Вывод через `BlzDisplayChatMessage` использует штатный вид чата, но по [документации native](https://lep.github.io/jassdoc/common.j.BlzDisplayChatMessage.html) не добавляет запись в журнал F12. Параметр канала меняет оформление; видимость тимчата дополнительно проверяется нашим скриптом.
+Вывод через `BlzDisplayChatMessage` использует штатный вид чата, но по [документации native](https://github.com/lep/jassdoc/blob/master/common.j#L26873) не добавляет запись в журнал F12. Параметр канала меняет оформление; видимость тимчата дополнительно проверяется нашим скриптом.
 
 ## Ограничения
 
