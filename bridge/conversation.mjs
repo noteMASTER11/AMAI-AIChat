@@ -21,7 +21,7 @@ export function historyFor(slot, history) {
 export function followupFor(delivery, bots, time) {
   if (delivery.purpose !== 'llm' || (delivery.depth || 0) >= 1 || delivery.recipient === delivery.bot || !bots.has(delivery.recipient)) return null;
   if (delivery.channel === 'team' && !delivery.recipients?.includes(delivery.recipient)) return null;
-  return { session: delivery.session, seq: delivery.seq, time, kind: 'bot-chat', bot: delivery.recipient, sourceBot: delivery.bot, text: delivery.text, channel: delivery.channel, recipients: delivery.recipients, depth: 1 };
+  return { session: delivery.session, seq: delivery.seq, time, kind: 'bot-chat', bot: delivery.recipient, sourceBot: delivery.bot, text: delivery.text, channel: delivery.channel, recipients: delivery.recipients, replyLanguage: delivery.replyLanguage, depth: 1 };
 }
 export function parseAcknowledgement(extra) {
   const [poll, visible] = String(extra).split(',');

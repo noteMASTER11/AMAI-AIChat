@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) F12 mirror entries now have a positive 0.01-second screen lifetime. A zero duration left large duplicate messages above chat in Warcraft 3.0.1; the journal entry remains after its screen lifetime ends.
 - (AI chat) Recent dialogue has its own bounded memory and context priority, so frequent position/inventory snapshots cannot erase a bot's previous lines. Exact and close lexical repeats are suppressed; unchanged inventory does not trigger another comment. Dialogue recovers from the current session's journal after a bridge restart.
 - (AI chat) A generated reply can wait for a fresh game heartbeat within its original deadline, instead of failing immediately when the local match is paused or loses focus. The console shows `WAIT GAME` while delivery waits.
 - (AI chat) Replies use a configurable UTF-8 byte and character budget, with word/sentence boundaries for the final length check. Restarting the bridge preserves its event cursor to avoid replaying old player messages.
@@ -25,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Changed
 
+- (AI chat) Personas now use more natural uncensored profanity according to mood and relationships. Default dialogue language follows the game client locale; a substantive human message in another language switches that bot's conversation, with the preference retained across events and bridge restarts. Short slang and emoticons do not request a switch.
 - (AI chat) Relationship impact now uses a signed exponential curve with a maximum step of ±0.8. Strong personal insults or substantial help can immediately change a directed relationship; mild banter causes small changes. Event valence remains independent, and assessments record raw impact and the actual clamped change.
 - (AI chat) AMAI template conversations and queued lines are muted while LLM mode is active; unavailable model responses remain silent. Commander control replies remain available.
 - (AI chat) The collector starts automatically in new supported melee matches. The separate diagnostic map is optional. Only observed game acknowledgements confirm transport.

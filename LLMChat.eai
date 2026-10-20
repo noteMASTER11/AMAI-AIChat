@@ -102,9 +102,9 @@ function LLMJournal takes player sender, string channel, string text returns not
     elseif StringCase(SubString(text, 0, 6), false) == "@team " then
         set text = SubString(text, 6, StringLength(text))
     endif
-    // Trigger text is retained by the single-player F12 journal. Zero duration
-    // keeps the native chat renderer as the only on-screen dialogue output.
-    call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 0, "[" + stamp + "] " + label + " |cff" + LLMColor(sender) + GetPlayerName(sender) + "|r: " + text)
+    // Trigger text is retained by F12 after its screen lifetime expires.
+    // Zero duration remains on screen in 3.0.1; use a positive sub-frame TTL.
+    call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 0.01, "[" + stamp + "] " + label + " |cff" + LLMColor(sender) + GetPlayerName(sender) + "|r: " + text)
 endfunction
 
 function LLMChatChannel takes string text returns string
@@ -408,7 +408,7 @@ function LLMPoll takes nothing returns nothing
     endif
     call PreloadGenClear()
     call PreloadGenStart()
-    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v2|0|-1|-1||" + I2S(llmLastReply) + "," + I2S(llmLastVisible))
+    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v2|0|-1|-1||" + I2S(llmLastReply) + "," + I2S(llmLastVisible) + "," + BlzGetLocale())
     // Roster snapshots live outside the 256-event history, so a bridge can
     // reconnect at any point in the match without losing bot identities.
     set i = 0

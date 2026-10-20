@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { llmChatGame } from './helpers/llm-chat-game.mjs';
 describe('Local LLM chat channel and observation boundaries', () => {
+  it('Given a German game client, when polling telemetry, then every heartbeat includes its locale', () => {
+    const game = llmChatGame();
+    game.LLMPoll();
+    assert.ok(game.preloads.some(row => typeof row === 'string' && row.includes('|tick|') && row.endsWith(',deDE')));
+  });
+  it('Given journal mirroring, when a visible reply is recorded, then it cannot create a permanent screen message', () => {
+    const game = llmChatGame({ channel: 'all', recipient: 0 });
+    game.LLMPoll();
+    assert.equal(game.journal.length, 1);
+    assert.ok(game.journal[0].duration > 0 && game.journal[0].duration <= 0.01);
+  });
   it('Given two enemy allies, when they exchange a team reply, then the game accepts it without showing the human', () => {
     const game = llmChatGame();
 
@@ -19,7 +30,7 @@ describe('Local LLM chat channel and observation boundaries', () => {
 
     assert.equal(game.llmLastVisible, 1);
     assert.deepEqual(game.shown, [{ speaker: 1, channel: 1, text: 'hello' }]);
-    assert.equal(game.overlays.length, 0);
+    assert.ok(game.overlays.every(call => call[3] > 0 && call[3] <= 0.01));
     assert.equal(game.journal.length, 1);
     assert.match(game.journal[0].text, /\[TEAM\].*Player 1.*hello/);
   });
@@ -29,9 +40,9 @@ describe('Local LLM chat channel and observation boundaries', () => {
     game.LLMPoll();
 
     assert.deepEqual(game.shown, [{ speaker: 1, channel: 0, text: 'hello' }]);
-    assert.equal(game.overlays.length, 0);
+    assert.ok(game.overlays.every(call => call[3] > 0 && call[3] <= 0.01));
     assert.equal(game.journal.length, 1);
-    assert.equal(game.journal[0].duration, 0);
+    assert.equal(game.journal[0].duration, 0.01);
     assert.match(game.journal[0].text, /\[0:10\] \[ALL\].*Player 1.*hello/);
 
     game.LLMPoll();
@@ -54,7 +65,7 @@ describe('Local LLM chat channel and observation boundaries', () => {
     assert.equal(game.journal.length, 1);
     assert.match(game.journal[0].text, /\[ALL\].*Player 0.*где твой тп\?/);
     assert.equal(game.shown.length, 0, 'the player already sent the real chat message');
-    assert.equal(game.overlays.length, 0);
+    assert.ok(game.overlays.every(call => call[3] > 0 && call[3] <= 0.01));
   });
   it('Given a human ally, when auto or an explicit channel is used, then journal labels follow bridge routing', () => {
     const game = llmChatGame({ humanAllied: true, inputText: 'держи мейн' });
@@ -69,7 +80,7 @@ describe('Local LLM chat channel and observation boundaries', () => {
   it('Given an LLM control command, when it is processed, then it is not mirrored as a dialogue message', () => {
     const game = llmChatGame({ inputText: '-llm all' });
     game.LLMOnChat();
-    assert.equal(game.journal.filter(row => row.duration === 0).length, 0);
+    assert.equal(game.journal.filter(row => row.duration <= 0.01).length, 0);
   });
   it('Given an unseen unit, when ordinary or allied-only facts arrive, then only entitled observers receive them', () => {
     const game = llmChatGame();

@@ -4,7 +4,7 @@ import { compile } from './jass.mjs';
 const source = readFileSync(new URL('../../LLMChat.eai', import.meta.url), 'utf8');
 export function llmChatGame({ humanAllied = false, channel = 'team', recipient = 3, inputText = 'hello', inputChannel = 'auto' } = {}) {
   const tooltip = { value: 'original' };
-  const shown = [], overlays = [], observed = [], journal = [];
+  const shown = [], overlays = [], observed = [], journal = [], preloads = [];
   const allies = new Set(['1:3', '3:1', ...(humanAllied ? ['0:1', '1:0'] : [])]);
   const state = {
     llmActive: true, llmSeq: 1, llmTick: 0, llmLastReply: 0, llmLastVisible: 0,
@@ -22,14 +22,15 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     GetEventPlayerChatString: () => inputText, GetTriggerPlayer: () => 0, GetLocalPlayer: () => 0,
     SubString: (value, a, b) => value.slice(a, b), S2I: value => parseInt(value, 10) || 0, S2R: Number,
     I2S: String, R2S: String, ModuloInteger: (a, b) => a % b,
-    PreloadGenClear: () => {}, PreloadGenStart: () => {}, PreloadGenEnd: () => {}, Preload: () => {},
+    PreloadGenClear: () => {}, PreloadGenStart: () => {}, PreloadGenEnd: () => {}, Preload: text => preloads.push(text),
+    BlzGetLocale: () => 'deDE',
     LLMColor: () => 'ffffff', LLMSample: () => {},
-    DisplayTimedTextToPlayer: (player, x, y, duration, text) => { journal.push({ player, duration, text }); if (duration > 0) overlays.push([player, x, y, duration, text]); },
+    DisplayTimedTextToPlayer: (player, x, y, duration, text) => { journal.push({ player, duration, text }); overlays.push([player, x, y, duration, text]); },
     BlzDisplayChatMessage: (speaker, channel, text) => shown.push({ speaker, channel, text }),
     GetOwningPlayer: unit => unit.owner, GetUnitTypeId: unit => unit.id, GetUnitName: unit => unit.name,
     IsUnitVisible: (unit, bot) => unit.visibleTo.includes(bot),
     LLMRecord: (...args) => observed.push(args),
-    shown, overlays, observed, journal,
+    shown, overlays, observed, journal, preloads,
   };
   vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMChatChannel', 'LLMAllies', 'LLMObserve', 'LLMPoll', 'LLMOnChat'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
   return state;

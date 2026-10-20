@@ -9,6 +9,7 @@ import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, parseAcknow
 import { Relationships, Observations } from './context.mjs';
 import { waitForGame } from './delivery.mjs';
 import { recoverDialogue, repeatedReply } from './dialogue.mjs';
+import { LanguagePreferences, localeFromHeartbeat, localeFromBuildInfo } from './language.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(await readFile(path.join(here, 'config.json'), 'utf8'));
@@ -35,6 +36,9 @@ const log = (kind, data) => {
 };
 let logChain = Promise.resolve();
 const previousState = await readFile(path.join(config.runtime, 'status.json'), 'utf8').then(JSON.parse).catch(() => null);
+const installationLocale = localeFromBuildInfo(await readFile(path.join(config.gamePath || 'D:\\Games\\Warcraft III', '.build.info'), 'utf8').catch(() => ''));
+const languages = new LanguagePreferences(previousState?.session, installationLocale, previousState?.languagePreferences);
+languages.setClientLocale(installationLocale, 'installation');
 const dialogue = await recoverDialogue(logFile, previousState?.session, previousState?.recentDialogue || previousState?.history || []);
 const resume = process.env.AMAI_RESUME_SESSION ? { session: process.env.AMAI_RESUME_SESSION, last: Number(process.env.AMAI_RESUME_SEQUENCE) } : { session: previousState?.session, last: previousState?.sequence };
 const inbox = new Inbox(resume);
@@ -78,6 +82,7 @@ async function writeState() {
     model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session, sequence: inbox.last,
     history: history.slice(-256),
     recentDialogue: dialogue.toJSON(),
+    languagePreferences: languages.toJSON(),
     transport: { poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
     bots: [...bots.values()], queue: scheduler.queue.map(e => ({ session: e.session, seq: e.seq, kind: e.kind, bot: e.bot, text: e.text, expires: e.expires })),
     human,
@@ -131,10 +136,11 @@ async function generateOne(event) {
     if (event.kind === 'chat') audience = audience.filter(p => p.slot === human.slot);
     if (event.kind === 'bot-chat') audience = audience.filter(p => p.slot === event.sourceBot);
     if (!audience.length) { outcome = 'silent'; return; }
-    const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience), recentDialogue: dialogue.forBot(bot.slot) };
+    const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience), recentDialogue: dialogue.forBot(bot.slot), languagePreferences: languages.forBot(bot.slot) };
     const answer = await client.generate(context, bot, historyFor(bot.slot, history));
     if (answer.shortened) log('reply-shortened', { session: event.session, seq: event.seq, bot: bot.slot, originalBytes: answer.originalBytes, outputBytes: Buffer.byteLength(answer.text, 'utf8'), text: answer.text });
     if (!running || event.session !== inbox.session) { outcome = 'expired'; return; }
+    languages.accept(event, answer, human.slot);
     const previousCoefficient = relationships.get(event.session, bot.slot, answer.relationshipTarget);
     const coefficient = relationships.apply(event.session, bot.slot, answer.requestId, answer);
     await writeFile(relationshipsFile + '.tmp', JSON.stringify(relationships)); await rename(relationshipsFile + '.tmp', relationshipsFile);
@@ -146,7 +152,7 @@ async function generateOne(event) {
       outcome = 'silent'; return;
     }
     if (!running || !scheduler.isCurrent(event, Date.now())) { outcome = 'expired'; return; }
-    const route = routeFor(bot, answer.recipient, bots, human.slot);
+    const route = { ...routeFor(bot, answer.recipient, bots, human.slot), replyLanguage: answer.replyLanguage };
     if (event.kind === 'bot-chat' && route.recipient !== event.sourceBot) throw new Error('Followup addressed to a different conversation');
     let deferred = false;
     const delivery = await waitForGame({ event, getTick: () => tick, getSession: () => scheduler.session, isRunning: () => running, onWaiting: () => {
@@ -196,9 +202,11 @@ try {
               if (previousState?.session === inbox.session) for (const event of previousState.observations || []) observations.add(event);
               if (previousState?.session === inbox.session) history = (previousState.history || []).slice(-256);
               if (dialogue.session !== inbox.session) dialogue.reset(inbox.session);
+              if (languages.session !== inbox.session) languages.reset(inbox.session);
               log('game-session', { session: inbox.session });
             }
             tick = { ...heartbeat, wall: info.mtimeMs };
+            if (languages.setClientLocale(localeFromHeartbeat(heartbeat.extra), 'game')) log('client-locale', { locale: languages.clientLocale, source: languages.source });
             human.slot = heartbeat.human;
             const acknowledgement = parseAcknowledgement(tick.extra);
             for (const [poll, delivery] of awaitingDelivery) {
