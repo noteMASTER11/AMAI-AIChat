@@ -105,7 +105,7 @@ const out = path.join(__dirname, 'evidence'); fs.mkdirSync(out, { recursive: tru
     }, captured);
     await stale.goto('http://127.0.0.1:8765');
     await stale.locator('.status-strip').filter({ hasText: 'READY' }).waitFor();
-    await stale.getByText('WAIT GAME', { exact: true }).waitFor();
+    await stale.locator('.panel').filter({ hasText: 'Планировщик' }).getByText('WAIT GAME', { exact: true }).waitFor();
     await stale.evaluate(() => window.breakStream());
     await stale.getByText('Поток прерван. Переподключаемся автоматически; последние данные сохранены.', { exact: true }).waitFor();
     assert.ok(!(await stale.locator('.status-strip').innerText()).includes('READY'), 'Disconnect clears readiness');

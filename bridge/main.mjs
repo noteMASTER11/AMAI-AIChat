@@ -8,6 +8,7 @@ import { CodexClient } from './codex.mjs';
 import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, parseAcknowledgement } from './conversation.mjs';
 import { Relationships, Observations } from './context.mjs';
 import { waitForGame } from './delivery.mjs';
+import { recoverDialogue, repeatedReply } from './dialogue.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(await readFile(path.join(here, 'config.json'), 'utf8'));
@@ -34,6 +35,7 @@ const log = (kind, data) => {
 };
 let logChain = Promise.resolve();
 const previousState = await readFile(path.join(config.runtime, 'status.json'), 'utf8').then(JSON.parse).catch(() => null);
+const dialogue = await recoverDialogue(logFile, previousState?.session, previousState?.recentDialogue || previousState?.history || []);
 const resume = process.env.AMAI_RESUME_SESSION ? { session: process.env.AMAI_RESUME_SESSION, last: Number(process.env.AMAI_RESUME_SEQUENCE) } : { session: previousState?.session, last: previousState?.sequence };
 const inbox = new Inbox(resume);
 const scheduler = new Scheduler(config);
@@ -75,6 +77,7 @@ async function writeState() {
     schema: 1, updatedAt: new Date(now).toISOString(), pid: process.pid, uptimeSeconds: process.uptime(),
     model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session, sequence: inbox.last,
     history: history.slice(-256),
+    recentDialogue: dialogue.toJSON(),
     transport: { poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
     bots: [...bots.values()], queue: scheduler.queue.map(e => ({ session: e.session, seq: e.seq, kind: e.kind, bot: e.bot, text: e.text, expires: e.expires })),
     human,
@@ -112,6 +115,7 @@ async function publish(event, bot, text, route = { channel: 'all', recipient: -1
   const delivery = { session: event.session, seq: event.seq, bot, poll: target, text, ...route, depth: event.depth || 0, purpose: event.kind ? 'llm' : 'probe', publishedAt: Date.now(), expiresAt: window.expiresAt };
   awaitingDelivery.set(target, delivery);
   log('reply-published', delivery);
+  dialogue.add({ ...delivery, kind: 'reply' });
 }
 
 async function generateOne(event) {
@@ -127,7 +131,7 @@ async function generateOne(event) {
     if (event.kind === 'chat') audience = audience.filter(p => p.slot === human.slot);
     if (event.kind === 'bot-chat') audience = audience.filter(p => p.slot === event.sourceBot);
     if (!audience.length) { outcome = 'silent'; return; }
-    const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience) };
+    const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience), recentDialogue: dialogue.forBot(bot.slot) };
     const answer = await client.generate(context, bot, historyFor(bot.slot, history));
     if (answer.shortened) log('reply-shortened', { session: event.session, seq: event.seq, bot: bot.slot, originalBytes: answer.originalBytes, outputBytes: Buffer.byteLength(answer.text, 'utf8'), text: answer.text });
     if (!running || event.session !== inbox.session) { outcome = 'expired'; return; }
@@ -135,6 +139,11 @@ async function generateOne(event) {
     await writeFile(relationshipsFile + '.tmp', JSON.stringify(relationships)); await rename(relationshipsFile + '.tmp', relationshipsFile);
     log('event-assessment', { session: event.session, seq: event.seq, bot: bot.slot, valence: answer.valence, target: answer.relationshipTarget, delta: answer.relationshipDelta, coefficient, requestId: answer.requestId });
     if (answer.silent || !answer.text) { outcome = 'silent'; return; }
+    const repeated = repeatedReply(answer.text, dialogue.ownForBot(bot.slot));
+    if (repeated) {
+      log('reply-suppressed', { session: event.session, seq: event.seq, bot: bot.slot, text: answer.text, ...repeated, requestId: answer.requestId });
+      outcome = 'silent'; return;
+    }
     if (!running || !scheduler.isCurrent(event, Date.now())) { outcome = 'expired'; return; }
     const route = routeFor(bot, answer.recipient, bots, human.slot);
     if (event.kind === 'bot-chat' && route.recipient !== event.sourceBot) throw new Error('Followup addressed to a different conversation');
@@ -185,6 +194,7 @@ try {
               scheduler.reset(inbox.session); bots.clear(); history = []; observations.clear(); awaitingDelivery.clear(); lastComment.clear(); verified = false; probe = null; attempts = 0; publishedPoll = -1;
               if (previousState?.session === inbox.session) for (const event of previousState.observations || []) observations.add(event);
               if (previousState?.session === inbox.session) history = (previousState.history || []).slice(-256);
+              if (dialogue.session !== inbox.session) dialogue.reset(inbox.session);
               log('game-session', { session: inbox.session });
             }
             tick = { ...heartbeat, wall: info.mtimeMs };
@@ -230,8 +240,9 @@ try {
               const bot = event.bot >= 0 ? bots.get(event.bot) : chooseBot(event.text, event.recipients);
               if (!bot) continue;
               history.push(event);
-              observations.add(event);
-              const important = ['chat', 'death', 'revive', 'build-finish', 'upgrade-finish', 'research', 'level', 'skill', 'inventory'].includes(event.kind) && !event.extra.includes(';refresh=true');
+              dialogue.add(event);
+              const changedObservation = observations.add(event);
+              const important = ['chat', 'death', 'revive', 'build-finish', 'upgrade-finish', 'research', 'level', 'skill', 'inventory'].includes(event.kind) && !event.extra.includes(';refresh=true') && (event.kind !== 'inventory' || changedObservation);
               const throttled = !['chat', 'death', 'revive'].includes(event.kind);
               const key = `${bot.slot}:${event.kind}`;
               if (verified && mode === 'llm' && important && (!throttled || Date.now() - (lastComment.get(key) || 0) >= 45000)) {

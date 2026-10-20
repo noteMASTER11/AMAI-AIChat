@@ -80,7 +80,7 @@ test('localhost API follows real JSONL appends, holds partial lines, and rejects
 test('large snapshots keep one SSE connection open and deliver later journal entries', { timeout: 10000 }, async () => {
   const root = await mkdtemp('D:/ChatGPT/Temp/amai-monitor-test-');
   const observations = [{ kind: 'inventory', text: 'предмет '.repeat(16000) }];
-  await writeFile(path.join(root, 'status.json'), JSON.stringify({ observations, history: [{ text: 'internal restart context' }] }));
+  await writeFile(path.join(root, 'status.json'), JSON.stringify({ observations, history: [{ text: 'internal restart context' }], recentDialogue: [{ text: 'internal dialogue memory' }] }));
   await writeFile(path.join(root, 'bridge.jsonl'), '');
   const monitor = await createMonitor({ runtime: root, interval: 30 });
   await new Promise(resolve => monitor.server.listen(0, '127.0.0.1', resolve));
@@ -102,6 +102,7 @@ test('large snapshots keep one SSE connection open and deliver later journal ent
         assert.ok(Buffer.byteLength(frame) > 65536, 'exercise a snapshot larger than the stream buffer');
         assert.deepEqual(payload.state.observations, observations);
         assert.equal(payload.state.history, undefined, 'restart context should not duplicate the streamed journal');
+        assert.equal(payload.state.recentDialogue, undefined, 'dialogue checkpoints should not duplicate the streamed journal');
         frames++;
         if (frames === 1) {
           assert.equal(payload.reset, true);

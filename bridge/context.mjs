@@ -43,17 +43,20 @@ export class Observations {
   add(event) {
     if (!['inventory', 'abilities', 'position', 'skill', 'level'].includes(event.kind)) return;
     const unit = /(?:^|;)unit=(\d+)/.exec(event.extra || '')?.[1] || `${event.owner}:${event.unitType}`;
-    this.latest.set(`${event.bot}:${unit}:${event.kind}`, { ...event });
+    const key = `${event.bot}:${unit}:${event.kind}`;
+    const previous = this.latest.get(key);
+    this.latest.set(key, { ...event });
     if (this.latest.size > 512) this.latest.delete(this.latest.keys().next().value);
+    return !previous || previous.text !== event.text;
   }
   forBot(bot, time) { return [...this.latest.values()].filter(event => event.bot === bot && time - event.time >= 0 && time - event.time <= 300).sort((a, b) => b.time - a.time).slice(0, 18); }
   clear() { this.latest.clear(); }
 }
-export function buildChunk(event, history = [], observations = [], relationships = [], maxChars = 12000) {
+export function buildChunk(event, history = [], observations = [], relationships = [], maxChars = 12000, dialogue = []) {
   const lines = [JSON.stringify({ type: 'scope', schema: 'AMAI_CHUNK_1', session: event.session, observer: event.bot, gameSeconds: event.time }), JSON.stringify({ type: 'current-event', data: event }), JSON.stringify({ type: 'relationships', data: relationships })];
   if (lines.join('\n').length > maxChars) throw new Error('Current event exceeds context budget');
   let omitted = 0;
-  const candidates = [...observations.map(data => ({ type: 'last-observed-state', data })), ...history.slice(-12).reverse().map(data => ({ type: 'recent-observed-event', data }))];
+  const candidates = [...dialogue.slice(-16).reverse().map(data => ({ type: 'recent-dialogue', data })), ...observations.map(data => ({ type: 'last-observed-state', data })), ...history.slice(-12).reverse().map(data => ({ type: 'recent-observed-event', data }))];
   for (const entry of candidates) {
     const text = JSON.stringify(entry);
     if (lines.join('\n').length + text.length + 1 <= maxChars) lines.push(text); else omitted++;

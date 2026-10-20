@@ -32,3 +32,21 @@ test('each standalone chunk has a fixed budget and keeps the current event befor
   assert.ok(chunk.text.length <= 2000); assert.ok(chunk.text.includes('current event'));
   assert.ok(chunk.omitted > 0);
 });
+
+test('dialogue gets context space before frequent telemetry and stays inside the fixed budget', () => {
+  const dialogue = [{ kind: 'reply', bot: 1, text: 'последняя реплика бота' }];
+  const observations = Array.from({ length: 18 }, () => ({ kind: 'position', text: 'coordinates '.repeat(100) }));
+  const chunk = buildChunk({ seq: 42, bot: 1, kind: 'inventory' }, [], observations, [], 1200, dialogue);
+  const records = chunk.text.split('\n').map(JSON.parse);
+  assert.ok(records.some(record => record.type === 'recent-dialogue' && record.data.text === dialogue[0].text));
+  assert.ok(chunk.text.length <= 1200);
+});
+
+test('unchanged inventory refreshes observations without triggering another inventory comment', () => {
+  const observations = new Observations();
+  const inventory = { bot: 1, kind: 'inventory', owner: 0, unitType: 99, text: 'boots', time: 10, extra: 'unit=42;refresh=false' };
+  assert.equal(observations.add(inventory), true);
+  assert.equal(observations.add({ ...inventory, time: 70 }), false);
+  assert.equal(observations.forBot(1, 70)[0].time, 70);
+  assert.equal(observations.add({ ...inventory, text: 'boots, tp', time: 75 }), true);
+});

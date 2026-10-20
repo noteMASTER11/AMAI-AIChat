@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) Recent dialogue has its own bounded memory and context priority, so frequent position/inventory snapshots cannot erase a bot's previous lines. Exact and close lexical repeats are suppressed; unchanged inventory does not trigger another comment. Dialogue recovers from the current session's journal after a bridge restart.
 - (AI chat) A generated reply can wait for a fresh game heartbeat within its original deadline, instead of failing immediately when the local match is paused or loses focus. The console shows `WAIT GAME` while delivery waits.
 - (AI chat) Replies use a configurable UTF-8 byte and character budget, with word/sentence boundaries for the final length check. Restarting the bridge preserves its event cursor to avoid replaying old player messages.
 - (AI chat) Bot replies now use Warcraft's native chat renderer with the bot as sender, instead of a timed screen overlay. Player color and localized channel labels are supplied by the game; explicit team visibility filtering is retained.

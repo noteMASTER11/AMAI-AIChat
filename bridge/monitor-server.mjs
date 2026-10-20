@@ -57,7 +57,7 @@ export async function createMonitor({ runtime, dist = path.join(here, '../dashbo
     let alive = false;
     if (Number.isSafeInteger(state?.pid) && state.pid > 0) { try { process.kill(state.pid, 0); alive = true; } catch { /* offline */ } }
     // Restart context stays on disk; the UI already receives the journal separately.
-    const { history, ...publicState } = state || {};
+    const { history, recentDialogue, ...publicState } = state || {};
     return {
       state: state ? publicState : null, installation, limits, summary: store.summary(),
       health: { alive, snapshotAgeMs: state ? Date.now() - Date.parse(state.updatedAt) : null, gameAgeMs: state?.transport?.lastHeartbeatAt ? Date.now() - state.transport.lastHeartbeatAt : null, error: readError },
