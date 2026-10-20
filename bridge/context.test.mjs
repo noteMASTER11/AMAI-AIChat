@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Relationships, Observations, buildChunk, validateAssessment } from './context.mjs';
+import { Relationships, Observations, buildChunk, validateAssessment, relationshipChange } from './context.mjs';
+
+test('emotional impact uses a signed exponential curve with small nudges and large immediate changes', () => {
+  assert.equal(relationshipChange(0), 0);
+  assert.equal(relationshipChange(1), 0.8);
+  assert.equal(relationshipChange(-1), -0.8);
+  assert.ok(relationshipChange(0.2) < 0.04);
+  assert.ok(relationshipChange(0.8) > 0.4);
+  assert.ok(relationshipChange(0.8) > 4 * relationshipChange(0.2));
+  for (let i = 1; i <= 10; i++) {
+    assert.ok(relationshipChange(i / 10) > relationshipChange((i - 1) / 10));
+    assert.equal(relationshipChange(-i / 10), -relationshipChange(i / 10));
+  }
+  assert.throws(() => relationshipChange(1.1));
+  assert.throws(() => relationshipChange(NaN));
+});
+
+test('a strong insult can immediately worsen one directed relationship and clamps at minus one', () => {
+  const state = new Relationships();
+  const insult = { valence: 0.6, relationshipTarget: 0, relationshipImpact: -1 };
+  assert.equal(state.apply('123456789', 1, 'insult', insult), -0.8);
+  assert.equal(state.get('123456789', 0, 1), 0);
+  assert.equal(state.apply('123456789', 1, 'insult', insult), -0.8);
+  assert.equal(state.apply('123456789', 1, 'another-insult', insult), -1);
+  const support = { valence: -0.8, relationshipTarget: 0, relationshipImpact: 1 };
+  assert.equal(state.apply('123456789', 1, 'support', support), -0.2);
+  assert.throws(() => validateAssessment({ ...insult, relationshipImpact: -1.1 }, [0]));
+  assert.throws(() => validateAssessment({ ...insult, relationshipTarget: -1 }, [0]));
+  assert.equal(validateAssessment({ ...insult, relationshipImpact: 0, relationshipTarget: -1 }, [0]).relationshipDelta, 0);
+});
 test('relationship score and event valence are distinct, bounded, directional and deduplicated', () => {
   const state = new Relationships();
   const assessment = { valence: -0.8, relationshipTarget: 2, relationshipDelta: 0.06 };

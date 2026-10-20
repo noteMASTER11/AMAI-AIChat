@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Changed
 
+- (AI chat) Relationship impact now uses a signed exponential curve with a maximum step of ±0.8. Strong personal insults or substantial help can immediately change a directed relationship; mild banter causes small changes. Event valence remains independent, and assessments record raw impact and the actual clamped change.
 - (AI chat) AMAI template conversations and queued lines are muted while LLM mode is active; unavailable model responses remain silent. Commander control replies remain available.
 - (AI chat) The collector starts automatically in new supported melee matches. The separate diagnostic map is optional. Only observed game acknowledgements confirm transport.
 

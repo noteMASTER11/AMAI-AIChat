@@ -135,9 +135,10 @@ async function generateOne(event) {
     const answer = await client.generate(context, bot, historyFor(bot.slot, history));
     if (answer.shortened) log('reply-shortened', { session: event.session, seq: event.seq, bot: bot.slot, originalBytes: answer.originalBytes, outputBytes: Buffer.byteLength(answer.text, 'utf8'), text: answer.text });
     if (!running || event.session !== inbox.session) { outcome = 'expired'; return; }
+    const previousCoefficient = relationships.get(event.session, bot.slot, answer.relationshipTarget);
     const coefficient = relationships.apply(event.session, bot.slot, answer.requestId, answer);
     await writeFile(relationshipsFile + '.tmp', JSON.stringify(relationships)); await rename(relationshipsFile + '.tmp', relationshipsFile);
-    log('event-assessment', { session: event.session, seq: event.seq, bot: bot.slot, valence: answer.valence, target: answer.relationshipTarget, delta: answer.relationshipDelta, coefficient, requestId: answer.requestId });
+    log('event-assessment', { session: event.session, seq: event.seq, bot: bot.slot, valence: answer.valence, target: answer.relationshipTarget, impact: answer.relationshipImpact ?? null, requestedDelta: answer.relationshipDelta, previousCoefficient, delta: Math.round((coefficient - previousCoefficient) * 10000) / 10000, coefficient, curve: answer.relationshipImpact === undefined ? 'legacy' : 'exponential-v1', requestId: answer.requestId });
     if (answer.silent || !answer.text) { outcome = 'silent'; return; }
     const repeated = repeatedReply(answer.text, dialogue.ownForBot(bot.slot));
     if (repeated) {

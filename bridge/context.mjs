@@ -1,9 +1,17 @@
 const slot = value => Number.isInteger(value) && value >= 0 && value < 24;
 const bounded = (value, low, high) => typeof value === 'number' && Number.isFinite(value) && value >= low && value <= high;
+export function relationshipChange(impact) {
+  if (!bounded(impact, -1, 1)) throw new Error('Invalid relationship impact');
+  return Math.sign(impact) * 0.8 * Math.expm1(3 * Math.abs(impact)) / Math.expm1(3);
+}
 export function validateAssessment(value, targets) {
-  if (!bounded(value.valence, -1, 1) || !bounded(value.relationshipDelta, -0.1, 0.1) || ![-1, ...targets].includes(value.relationshipTarget)) throw new Error('Invalid event assessment');
-  if (value.relationshipTarget === -1 && value.relationshipDelta !== 0) throw new Error('An untargeted event cannot change a relationship');
-  return { valence: value.valence, relationshipTarget: value.relationshipTarget, relationshipDelta: value.relationshipDelta };
+  if (!bounded(value.valence, -1, 1) || ![-1, ...targets].includes(value.relationshipTarget)) throw new Error('Invalid event assessment');
+  const hasImpact = value.relationshipImpact !== undefined;
+  // Older saved assessments retain their original delta; new model output uses impact.
+  if (!hasImpact && !bounded(value.relationshipDelta, -0.1, 0.1)) throw new Error('Invalid event assessment');
+  const delta = hasImpact ? relationshipChange(value.relationshipImpact) : value.relationshipDelta;
+  if (value.relationshipTarget === -1 && delta !== 0) throw new Error('An untargeted event cannot change a relationship');
+  return { valence: value.valence, relationshipTarget: value.relationshipTarget, ...(hasImpact ? { relationshipImpact: value.relationshipImpact } : {}), relationshipDelta: delta };
 }
 export class Relationships {
   sessions = new Map();
@@ -21,16 +29,16 @@ export class Relationships {
   forBot(session, bot, audience) { return audience.map(player => ({ slot: player.slot, name: player.name, alliance: player.relation, coefficient: this.get(session, bot, player.slot) })); }
   apply(session, bot, requestId, assessment) {
     if (!/^\d{6,18}$/.test(session) || !slot(bot)) throw new Error('Invalid relationship identity');
-    validateAssessment(assessment, Array.from({ length: 24 }, (_, i) => i).filter(i => i !== bot));
+    const validated = validateAssessment(assessment, Array.from({ length: 24 }, (_, i) => i).filter(i => i !== bot));
     const target = assessment.relationshipTarget;
     const previous = this.get(session, bot, target);
     const key = `${session}:${bot}:${requestId}`;
     if (this.seen.has(key)) return previous;
     this.seen.add(key);
     if (this.seen.size > 4000) this.seen.delete(this.seen.values().next().value);
-    if (target < 0 || assessment.relationshipDelta === 0) return previous;
+    if (target < 0 || validated.relationshipDelta === 0) return previous;
     const pairs = this.sessions.get(session) || {};
-    const next = Math.round(Math.max(-1, Math.min(1, previous + assessment.relationshipDelta)) * 10000) / 10000;
+    const next = Math.round(Math.max(-1, Math.min(1, previous + validated.relationshipDelta)) * 10000) / 10000;
     pairs[`${bot}:${target}`] = next;
     this.sessions.set(session, pairs);
     if (this.sessions.size > 8) this.sessions.delete(this.sessions.keys().next().value);
