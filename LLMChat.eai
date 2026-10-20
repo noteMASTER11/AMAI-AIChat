@@ -83,6 +83,48 @@ function LLMColor takes player p returns string
     return "ffcc00"
 endfunction
 
+function LLMJournal takes player sender, string channel, string text returns nothing
+    local integer seconds = ModuloInteger(R2I(TimerGetElapsed(llmClock)), 60)
+    local string stamp = I2S(R2I(TimerGetElapsed(llmClock) / 60.0)) + ":"
+    local string label = "[ALL]"
+    if GetPlayerId(GetLocalPlayer()) != llmHuman or text == "" then
+        return
+    endif
+    if seconds < 10 then
+        set stamp = stamp + "0"
+    endif
+    set stamp = stamp + I2S(seconds)
+    if channel == "team" then
+        set label = "[TEAM]"
+    endif
+    if StringCase(SubString(text, 0, 5), false) == "@all " then
+        set text = SubString(text, 5, StringLength(text))
+    elseif StringCase(SubString(text, 0, 6), false) == "@team " then
+        set text = SubString(text, 6, StringLength(text))
+    endif
+    // Trigger text is retained by the single-player F12 journal. Zero duration
+    // keeps the native chat renderer as the only on-screen dialogue output.
+    call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 0, "[" + stamp + "] " + label + " |cff" + LLMColor(sender) + GetPlayerName(sender) + "|r: " + text)
+endfunction
+
+function LLMChatChannel takes string text returns string
+    local integer i = 0
+    if StringCase(SubString(text, 0, 5), false) == "@all " or llmInputChannel == "all" then
+        return "all"
+    endif
+    if StringCase(SubString(text, 0, 6), false) == "@team " or llmInputChannel == "team" then
+        return "team"
+    endif
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING and IsPlayerAlly(Player(i), Player(llmHuman)) and IsPlayerAlly(Player(llmHuman), Player(i)) then
+            return "team"
+        endif
+        set i = i + 1
+    endloop
+    return "all"
+endfunction
+
 function LLMAllies takes integer bot returns string
     local integer i = 0
     local string result = "allies:"
@@ -350,6 +392,7 @@ function LLMPoll takes nothing returns nothing
                     // channel label. It does not filter viewers, so retain
                     // the explicit alliance check above before calling it.
                     call BlzDisplayChatMessage(Player(bot), chatMode, text)
+                    call LLMJournal(Player(bot), channel, text)
                     set llmLastVisible = 1
                 endif
                 set llmLastReply = seq
@@ -448,6 +491,7 @@ function LLMOnChat takes nothing returns nothing
         set llmInputChannel = SubString(text, 5, StringLength(text))
         call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM input channel: " + llmInputChannel)
     elseif llmActive and GetPlayerId(GetTriggerPlayer()) == llmHuman and SubString(text, 0, 1) != "-" then
+        call LLMJournal(Player(llmHuman), LLMChatChannel(text), text)
         call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + llmInputChannel)
     endif
 endfunction

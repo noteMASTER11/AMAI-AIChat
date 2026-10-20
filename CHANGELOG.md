@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Added
 
+- (AI chat) Human messages and visible bot replies are mirrored to the single-player F12 journal with game time, sender color/name and channel. Hidden enemy team conversations remain excluded; control commands and repeated delivery polls do not add duplicate dialogue entries.
 - (AI chat) Local single-human JASS melee matches can use contextual Russian bot conversations through Codex App Server with GPT-6.1 Sol and low effort. Bots can address players or other bots; allied conversations use team channels, with one bounded followup per exchange.
 - (AI chat) Hero deaths, revival, movement, construction, upgrades, research, skills and inventory snapshots provide observable context. Each request uses a bounded text chunk and a fresh model thread. Event valence and directed relationship scores are tracked separately and influence tone.
 - (Installer) Reversible global script replacement, exact-file backups and one-time installation after Warcraft exits.

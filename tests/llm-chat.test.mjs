@@ -10,6 +10,7 @@ describe('Local LLM chat channel and observation boundaries', () => {
     assert.equal(game.llmLastReply, 1);
     assert.equal(game.llmLastVisible, 0);
     assert.equal(game.shown.length, 0);
+    assert.equal(game.journal.length, 0);
   });
   it('Given a human allied to the speaker, when a team reply arrives, then the human sees the team label', () => {
     const game = llmChatGame({ humanAllied: true });
@@ -19,6 +20,8 @@ describe('Local LLM chat channel and observation boundaries', () => {
     assert.equal(game.llmLastVisible, 1);
     assert.deepEqual(game.shown, [{ speaker: 1, channel: 1, text: 'hello' }]);
     assert.equal(game.overlays.length, 0);
+    assert.equal(game.journal.length, 1);
+    assert.match(game.journal[0].text, /\[TEAM\].*Player 1.*hello/);
   });
   it('Given a public reply, when it arrives, then native chat receives the bot author and unprefixed text', () => {
     const game = llmChatGame({ channel: 'all', recipient: 0 });
@@ -27,6 +30,12 @@ describe('Local LLM chat channel and observation boundaries', () => {
 
     assert.deepEqual(game.shown, [{ speaker: 1, channel: 0, text: 'hello' }]);
     assert.equal(game.overlays.length, 0);
+    assert.equal(game.journal.length, 1);
+    assert.equal(game.journal[0].duration, 0);
+    assert.match(game.journal[0].text, /\[0:10\] \[ALL\].*Player 1.*hello/);
+
+    game.LLMPoll();
+    assert.equal(game.journal.length, 1, 'a repeated poll must not duplicate the journal entry');
   });
   it('Given an enemy recipient, when a forged team route arrives, then the game rejects its acknowledgement', () => {
     const game = llmChatGame({ recipient: 2 });
@@ -35,6 +44,32 @@ describe('Local LLM chat channel and observation boundaries', () => {
 
     assert.equal(game.llmLastReply, 0);
     assert.equal(game.shown.length, 0);
+    assert.equal(game.journal.length, 0);
+  });
+  it('Given a human public message, when it is collected, then F12 receives the author and message once', () => {
+    const game = llmChatGame({ inputText: 'где твой тп?', inputChannel: 'all' });
+
+    game.LLMOnChat();
+
+    assert.equal(game.journal.length, 1);
+    assert.match(game.journal[0].text, /\[ALL\].*Player 0.*где твой тп\?/);
+    assert.equal(game.shown.length, 0, 'the player already sent the real chat message');
+    assert.equal(game.overlays.length, 0);
+  });
+  it('Given a human ally, when auto or an explicit channel is used, then journal labels follow bridge routing', () => {
+    const game = llmChatGame({ humanAllied: true, inputText: 'держи мейн' });
+    game.LLMOnChat();
+    assert.match(game.journal[0].text, /\[TEAM\]/);
+
+    const publicGame = llmChatGame({ humanAllied: true, inputText: '@all привет' });
+    publicGame.LLMOnChat();
+    assert.match(publicGame.journal[0].text, /\[ALL\].*привет/);
+    assert.ok(!publicGame.journal[0].text.includes('@all'));
+  });
+  it('Given an LLM control command, when it is processed, then it is not mirrored as a dialogue message', () => {
+    const game = llmChatGame({ inputText: '-llm all' });
+    game.LLMOnChat();
+    assert.equal(game.journal.filter(row => row.duration === 0).length, 0);
   });
   it('Given an unseen unit, when ordinary or allied-only facts arrive, then only entitled observers receive them', () => {
     const game = llmChatGame();
