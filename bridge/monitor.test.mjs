@@ -76,3 +76,45 @@ test('localhost API follows real JSONL appends, holds partial lines, and rejects
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('large snapshots keep one SSE connection open and deliver later journal entries', { timeout: 10000 }, async () => {
+  const root = await mkdtemp('D:/ChatGPT/Temp/amai-monitor-test-');
+  const observations = [{ kind: 'inventory', text: 'предмет '.repeat(16000) }];
+  await writeFile(path.join(root, 'status.json'), JSON.stringify({ observations, history: [{ text: 'internal restart context' }] }));
+  await writeFile(path.join(root, 'bridge.jsonl'), '');
+  const monitor = await createMonitor({ runtime: root, interval: 30 });
+  await new Promise(resolve => monitor.server.listen(0, '127.0.0.1', resolve));
+  const controller = new AbortController();
+  let reader;
+  try {
+    const response = await fetch(`http://127.0.0.1:${monitor.server.address().port}/api/stream`, { signal: controller.signal });
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let carry = '', frames = 0, receivedLaterRecord = false;
+    while (frames < 5 || !receivedLaterRecord) {
+      const { value, done } = await reader.read();
+      assert.equal(done, false, 'a full output buffer must not close the stream');
+      carry += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = carry.indexOf('\n\n')) >= 0) {
+        const frame = carry.slice(0, boundary); carry = carry.slice(boundary + 2);
+        const payload = JSON.parse(frame.split('\ndata: ')[1]);
+        assert.ok(Buffer.byteLength(frame) > 65536, 'exercise a snapshot larger than the stream buffer');
+        assert.deepEqual(payload.state.observations, observations);
+        assert.equal(payload.state.history, undefined, 'restart context should not duplicate the streamed journal');
+        frames++;
+        if (frames === 1) {
+          assert.equal(payload.reset, true);
+          await appendFile(path.join(root, 'bridge.jsonl'), JSON.stringify({ at, kind: 'game-event', data: { kind: 'chat', text: 'новая реплика' } }) + '\n');
+        } else assert.equal(payload.reset, false);
+        receivedLaterRecord ||= payload.records.some(record => record.data.text === 'новая реплика');
+      }
+    }
+  } finally {
+    controller.abort();
+    await reader?.cancel().catch(() => {});
+    await monitor.close();
+    assert.ok(path.resolve(root).toLowerCase().startsWith(path.resolve('D:/ChatGPT/Temp/amai-monitor-test-').toLowerCase()));
+    await rm(root, { recursive: true, force: true });
+  }
+});

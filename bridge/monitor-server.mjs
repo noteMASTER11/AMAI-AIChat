@@ -56,22 +56,39 @@ export async function createMonitor({ runtime, dist = path.join(here, '../dashbo
   function snapshot() {
     let alive = false;
     if (Number.isSafeInteger(state?.pid) && state.pid > 0) { try { process.kill(state.pid, 0); alive = true; } catch { /* offline */ } }
+    // Restart context stays on disk; the UI already receives the journal separately.
+    const { history, ...publicState } = state || {};
     return {
-      state, installation, limits, summary: store.summary(),
+      state: state ? publicState : null, installation, limits, summary: store.summary(),
       health: { alive, snapshotAgeMs: state ? Date.now() - Date.parse(state.updatedAt) : null, gameAgeMs: state?.transport?.lastHeartbeatAt ? Date.now() - state.transport.lastHeartbeatAt : null, error: readError },
       monitor: { startedAt, pid: process.pid, runtime, logBytesRead: offset, historyTruncated: truncated, retained: store.records.length, readonly: true },
     };
+  }
+  function sendUpdate(client, current, reset = false) {
+    if (client.res.destroyed || client.res.writableEnded) { clients.delete(client); return; }
+    // write(false) means this frame was accepted, but the buffer needs to drain.
+    // Keep at most one frame queued and catch up from the journal after draining.
+    if (client.blocked) return;
+    reset ||= Boolean(store.records.length && client.cursor < store.records[0].id - 1);
+    const records = reset ? store.records : store.records.filter(record => record.id > client.cursor);
+    const body = JSON.stringify({ ...current, records, reset });
+    try {
+      const ready = client.res.write(`event: update\ndata: ${body}\n\n`);
+      client.cursor = store.nextId;
+      if (!ready) {
+        client.blocked = true;
+        client.res.once('drain', () => { client.blocked = false; });
+      }
+    } catch {
+      clients.delete(client);
+      client.res.destroy();
+    }
   }
   await collect();
   const timer = setInterval(async () => {
     await collect();
     const current = snapshot();
-    for (const client of clients) {
-      const records = store.records.filter(record => record.id > client.cursor);
-      const body = JSON.stringify({ ...current, records, reset: false });
-      if (!client.res.write(`event: update\ndata: ${body}\n\n`)) { client.res.end(); clients.delete(client); continue; }
-      client.cursor = store.nextId;
-    }
+    for (const client of clients) sendUpdate(client, current);
   }, interval);
   timer.unref();
   const server = http.createServer(async (req, res) => {
@@ -103,9 +120,10 @@ export async function createMonitor({ runtime, dist = path.join(here, '../dashbo
     }
     if (url.pathname === '/api/stream') {
       res.writeHead(200, { ...headers, 'Content-Type': 'text/event-stream; charset=utf-8', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
-      const client = { res, cursor: store.nextId }; clients.add(client);
-      res.write(`event: update\ndata: ${JSON.stringify({ ...snapshot(), records: store.records, reset: true })}\n\n`);
-      req.on('close', () => clients.delete(client)); return;
+      const client = { res, cursor: store.nextId, blocked: false }; clients.add(client);
+      res.once('close', () => clients.delete(client));
+      res.once('error', () => { clients.delete(client); res.destroy(); });
+      sendUpdate(client, snapshot(), true); return;
     }
     try {
       const decoded = decodeURIComponent(url.pathname);
