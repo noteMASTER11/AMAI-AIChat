@@ -27,14 +27,26 @@ export function parseEvents(text) {
   return result;
 }
 
-export function cleanText(text) {
-  return [...String(text).replace(/\|c[0-9a-f]{8}/gi, '').replace(/\|[rn]/gi, ' ').replace(/[\x00-\x1f\x7f|]/g, ' ').replace(/\s+/g, ' ').trim()].slice(0, 180).join('');
+export function cleanText(text, { chatMaxBytes = 120, chatMaxChars = 80 } = {}) {
+  if (!Number.isSafeInteger(chatMaxBytes) || chatMaxBytes < 8 || !Number.isSafeInteger(chatMaxChars) || chatMaxChars < 4) throw new Error('Invalid chat text budget');
+  const normalized = String(text).replace(/\|c[0-9a-f]{8}/gi, '').replace(/\|[rn]/gi, ' ').replace(/[\x00-\x1f\x7f|]/g, ' ').replace(/\s+/g, ' ').trim();
+  if ([...normalized].length <= chatMaxChars && Buffer.byteLength(normalized, 'utf8') <= chatMaxBytes) return normalized;
+  const ellipsis = '…';
+  let result = '';
+  for (const char of normalized) {
+    if ([...result].length + 1 > chatMaxChars - 1 || Buffer.byteLength(result + char + ellipsis, 'utf8') > chatMaxBytes) break;
+    result += char;
+  }
+  const sentence = /^(.*[.!?])(?:\s|$)/u.exec(result)?.[1];
+  if (sentence) return sentence.trim();
+  const boundary = result.lastIndexOf(' ');
+  return boundary >= 0 ? result.slice(0, boundary).trimEnd() + ellipsis : ellipsis;
 }
 
-export function makeReply(session, seq, bot, text, deadline, token = seq, route = { channel: 'all', recipient: -1 }) {
+export function makeReply(session, seq, bot, text, deadline, token = seq, route = { channel: 'all', recipient: -1 }, limits = {}) {
   if (!sessionPattern.test(session) || !Number.isSafeInteger(seq) || seq < 1 || !Number.isSafeInteger(token) || token < 1 || !Number.isSafeInteger(bot) || bot < 0 || bot > 23 || !Number.isFinite(deadline) || deadline <= 0) throw new Error('Invalid reply identity/deadline');
   if (!['all', 'team'].includes(route.channel) || !Number.isInteger(route.recipient) || route.recipient < (route.channel === 'team' ? 0 : -1) || route.recipient > 23 || route.recipient === bot) throw new Error('Invalid reply route');
-  const payload = `${session}|${token}|${bot}|${deadline}|${cleanText(text)}|${seq}|${route.channel}|${route.recipient}`.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  const payload = `${session}|${token}|${bot}|${deadline}|${cleanText(text, limits)}|${seq}|${route.channel}|${route.recipient}`.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
   return `function PreloadFiles takes nothing returns nothing\ncall BlzSetAbilityTooltip(1097690227, "${payload}", 0)\nendfunction\n`;
 }
 
@@ -42,6 +54,9 @@ export class Inbox {
   session = null;
   last = 0;
   retired = new Set();
+  constructor(saved = {}) {
+    if (sessionPattern.test(saved.session || '') && Number.isSafeInteger(saved.last) && saved.last >= 0) { this.session = saved.session; this.last = saved.last; }
+  }
   accept(events) {
     const heartbeats = events.filter(e => e.kind === 'tick');
     if (heartbeats.length !== 1 || events.some(e => e.session !== heartbeats[0].session)) return [];

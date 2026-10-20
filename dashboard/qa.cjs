@@ -62,7 +62,12 @@ const out = path.join(__dirname, 'evidence'); fs.mkdirSync(out, { recursive: tru
     await page.getByRole('button', { name: 'К реальным данным →', exact: true }).click();
     assert.equal(await page.getByText('DEMO MODE', { exact: true }).count(), 0);
     await page.getByRole('button', { name: 'Пауза ленты', exact: true }).waitFor();
-    assert.equal(await page.locator('.message-row').count(), 0, 'Paused demo cannot survive source change');
+    const liveDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Экспорт', exact: true }).click();
+    await (await liveDownload).saveAs(path.join(out, 'live-export.json'));
+    const liveExport = JSON.parse(fs.readFileSync(path.join(out, 'live-export.json')));
+    assert.equal(liveExport.source, 'live-journal');
+    assert.ok(liveExport.records.every(record => record.data?.session !== '834291507612'), 'Paused demo cannot survive source change');
     await page.getByRole('button', { name: 'Демо', exact: true }).click();
     await page.getByText('✓ принят · TEAM', { exact: true }).waitFor();
     assert.ok(await page.locator('.relationship-row').count() > 0);
@@ -85,7 +90,7 @@ const out = path.join(__dirname, 'evidence'); fs.mkdirSync(out, { recursive: tru
     await failed.close();
     const captured = await (await fetch('http://127.0.0.1:8765/api/snapshot')).json();
     captured.health = { alive: true, snapshotAgeMs: 0, gameAgeMs: 0 };
-    captured.state = { ...captured.state, updatedAt: new Date().toISOString(), modelReady: true, transport: { lastHeartbeatAt: Date.now() } };
+    captured.state = { ...captured.state, updatedAt: new Date().toISOString(), modelReady: true, activeRequest: { seq: 100, bot: 1, phase: 'awaiting-game', startedAt: Date.now() }, transport: { lastHeartbeatAt: Date.now() } };
     const stale = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     await stale.addInitScript(snapshot => {
       window.EventSource = class extends EventTarget {
@@ -100,6 +105,7 @@ const out = path.join(__dirname, 'evidence'); fs.mkdirSync(out, { recursive: tru
     }, captured);
     await stale.goto('http://127.0.0.1:8765');
     await stale.locator('.status-strip').filter({ hasText: 'READY' }).waitFor();
+    await stale.getByText('WAIT GAME', { exact: true }).waitFor();
     await stale.evaluate(() => window.breakStream());
     await stale.getByText('Поток прерван. Переподключаемся автоматически; последние данные сохранены.', { exact: true }).waitFor();
     assert.ok(!(await stale.locator('.status-strip').innerText()).includes('READY'), 'Disconnect clears readiness');

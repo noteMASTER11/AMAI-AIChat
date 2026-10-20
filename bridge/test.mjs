@@ -29,8 +29,26 @@ test('reply wrapper cannot turn hostile text into JASS or Warcraft markup', () =
   assert.equal(reply.split('\n').length, 4);
   assert.ok(reply.includes('\\"'));
   assert.ok(!reply.includes('|cffff0000'));
-  assert.equal([...cleanText('я'.repeat(200))].length, 180);
+  assert.ok(Buffer.byteLength(cleanText('я'.repeat(200)), 'utf8') <= 120);
   assert.throws(() => makeReply('../x', 2, 1, 'нет', 50));
+});
+test('chat text respects UTF-8 and character budgets without cutting a word or code point', () => {
+  const phrase = 'на эксп не лезь один, я с блейдом подойду. потом уже геройствуй и не забудь свиток';
+  const fitted = cleanText(phrase);
+  assert.ok(Buffer.byteLength(fitted, 'utf8') <= 120);
+  assert.ok([...fitted].length <= 80);
+  assert.ok(!fitted.includes('\ufffd'));
+  assert.ok(/[.!?…]$/u.test(fitted));
+  assert.equal(cleanText('купи тп)))'), 'купи тп)))');
+  const emoji = cleanText('бот xD ' + '👨‍👩‍👧‍👦 '.repeat(20));
+  assert.ok(Buffer.byteLength(emoji, 'utf8') <= 120);
+  assert.ok(!emoji.includes('\ufffd'));
+  assert.ok(Buffer.byteLength(cleanText('короткая русская реплика', { chatMaxBytes: 24, chatMaxChars: 20 }), 'utf8') <= 24);
+});
+test('restored inbox cursor does not replay old human messages after bridge restart', () => {
+  const inbox = new Inbox({ session: '123456789', last: 10 });
+  const rows = inbox.accept(snapshotEvents([event(9, 'chat'), event(10, 'chat'), event(11, 'chat')]));
+  assert.deepEqual(rows.filter(e => e.kind === 'chat').map(e => e.seq), [11]);
 });
 
 test('JSON-RPC rejects server errors, timeouts and exited processes', async () => {

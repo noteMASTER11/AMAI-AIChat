@@ -8,5 +8,7 @@
   "botCooldownMs": 20000,
   "eventTtlMs": 20000,
   "chatTtlMs": 45000,
-  "contextMaxChars": 12000
+  "contextMaxChars": 12000,
+  "chatMaxBytes": 120,
+  "chatMaxChars": 80
 }

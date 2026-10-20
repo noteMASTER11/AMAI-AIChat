@@ -2,11 +2,12 @@ import { readFile, writeFile, rename, mkdir, stat, readdir, unlink, open } from 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { parseEvents, makeReply, Inbox, replyWindow, expireReplies } from './protocol.mjs';
+import { parseEvents, makeReply, cleanText, Inbox, replyWindow, expireReplies } from './protocol.mjs';
 import { Scheduler } from './scheduler.mjs';
 import { CodexClient } from './codex.mjs';
 import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, parseAcknowledgement } from './conversation.mjs';
 import { Relationships, Observations } from './context.mjs';
+import { waitForGame } from './delivery.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(await readFile(path.join(here, 'config.json'), 'utf8'));
@@ -32,7 +33,9 @@ const log = (kind, data) => {
   logChain = logChain.then(async () => { const fh = await open(logFile, 'a'); try { await fh.writeFile(record + '\n'); } finally { await fh.close(); } }).catch(() => {});
 };
 let logChain = Promise.resolve();
-const inbox = new Inbox();
+const previousState = await readFile(path.join(config.runtime, 'status.json'), 'utf8').then(JSON.parse).catch(() => null);
+const resume = process.env.AMAI_RESUME_SESSION ? { session: process.env.AMAI_RESUME_SESSION, last: Number(process.env.AMAI_RESUME_SEQUENCE) } : { session: previousState?.session, last: previousState?.sequence };
+const inbox = new Inbox(resume);
 const scheduler = new Scheduler(config);
 const client = new CodexClient(config, log);
 const bots = new Map();
@@ -57,12 +60,11 @@ let cpuPrevious = process.cpuUsage();
 let cpuSampleAt = Date.now();
 let cpuPercent = 0;
 let activeRequest = null;
-let human = { slot: 0, name: 'Игрок' };
+let human = previousState?.session === inbox.session && previousState.human ? previousState.human : { slot: 0, name: 'Игрок' };
 const lastComment = new Map();
 const relationshipsFile = path.join(config.runtime, 'relationships.json');
 const relationships = new Relationships(await readFile(relationshipsFile, 'utf8').then(JSON.parse).catch(() => null));
 const observations = new Observations();
-const previousState = await readFile(path.join(config.runtime, 'status.json'), 'utf8').then(JSON.parse).catch(() => null);
 
 async function writeState() {
   const now = Date.now();
@@ -71,7 +73,8 @@ async function writeState() {
   cpuPrevious = process.cpuUsage(); cpuSampleAt = now;
   const state = {
     schema: 1, updatedAt: new Date(now).toISOString(), pid: process.pid, uptimeSeconds: process.uptime(),
-    model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session,
+    model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session, sequence: inbox.last,
+    history: history.slice(-256),
     transport: { poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
     bots: [...bots.values()], queue: scheduler.queue.map(e => ({ session: e.session, seq: e.seq, kind: e.kind, bot: e.bot, text: e.text, expires: e.expires })),
     human,
@@ -97,10 +100,11 @@ function chooseBot(text, recipients = [...bots.keys()]) {
 async function publish(event, bot, text, route = { channel: 'all', recipient: -1, recipients: [human.slot, ...bots.keys()] }) {
   if (!tick || event.session !== inbox.session || Date.now() - tick.wall > 3000) throw new Error('No live game heartbeat');
   const target = Math.max(tick.unitType + 4, publishedPoll + 1);
+  text = cleanText(text, config);
   const window = replyWindow(event, tick, Date.now(), (target - tick.unitType) * 500);
   const filename = path.join(config.mailbox, `reply-${event.session}-${target}.pld`);
   const temporary = filename + '.tmp';
-  await writeFile(temporary, makeReply(event.session, event.seq, bot, text, window.gameDeadline, target, route), 'utf8');
+  await writeFile(temporary, makeReply(event.session, event.seq, bot, text, window.gameDeadline, target, route, config), 'utf8');
   await rename(temporary, filename);
   pendingReplies.set(filename, window.expiresAt);
   setTimeout(() => expireReplies(pendingReplies, Date.now()).catch(error => log('expiry-error', error.message)), Math.max(1, window.expiresAt - Date.now())).unref();
@@ -125,6 +129,7 @@ async function generateOne(event) {
     if (!audience.length) { outcome = 'silent'; return; }
     const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience) };
     const answer = await client.generate(context, bot, historyFor(bot.slot, history));
+    if (answer.shortened) log('reply-shortened', { session: event.session, seq: event.seq, bot: bot.slot, originalBytes: answer.originalBytes, outputBytes: Buffer.byteLength(answer.text, 'utf8'), text: answer.text });
     if (!running || event.session !== inbox.session) { outcome = 'expired'; return; }
     const coefficient = relationships.apply(event.session, bot.slot, answer.requestId, answer);
     await writeFile(relationshipsFile + '.tmp', JSON.stringify(relationships)); await rename(relationshipsFile + '.tmp', relationshipsFile);
@@ -133,6 +138,15 @@ async function generateOne(event) {
     if (!running || !scheduler.isCurrent(event, Date.now())) { outcome = 'expired'; return; }
     const route = routeFor(bot, answer.recipient, bots, human.slot);
     if (event.kind === 'bot-chat' && route.recipient !== event.sourceBot) throw new Error('Followup addressed to a different conversation');
+    let deferred = false;
+    const delivery = await waitForGame({ event, getTick: () => tick, getSession: () => scheduler.session, isRunning: () => running, onWaiting: () => {
+      deferred = true;
+      activeRequest = { ...activeRequest, phase: 'awaiting-game', readyAt: Date.now(), text: answer.text };
+      log('reply-deferred', { session: event.session, seq: event.seq, bot: event.bot, status: 'awaiting-game', reason: 'game-heartbeat-stale', expiresAt: event.expires });
+    } });
+    if (delivery !== 'ready') { outcome = 'expired'; return; }
+    if (deferred) log('reply-resumed', { session: event.session, seq: event.seq, bot: event.bot, status: 'publishing' });
+    activeRequest = { ...activeRequest, phase: 'publishing' };
     await publish(event, event.bot, answer.text, route);
     shown = true;
     outcome = 'published';
@@ -170,6 +184,7 @@ try {
             if (scheduler.session !== inbox.session) {
               scheduler.reset(inbox.session); bots.clear(); history = []; observations.clear(); awaitingDelivery.clear(); lastComment.clear(); verified = false; probe = null; attempts = 0; publishedPoll = -1;
               if (previousState?.session === inbox.session) for (const event of previousState.observations || []) observations.add(event);
+              if (previousState?.session === inbox.session) history = (previousState.history || []).slice(-256);
               log('game-session', { session: inbox.session });
             }
             tick = { ...heartbeat, wall: info.mtimeMs };
