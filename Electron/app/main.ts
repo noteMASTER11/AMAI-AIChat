@@ -1,16 +1,18 @@
-import {app, BrowserWindow, dialog, Menu, screen } from 'electron';
+import {app, BrowserWindow, dialog, ipcMain, Menu, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as remote from '@electron/remote/main';
+import * as cp from 'child_process';
 import { InstallModel } from '../commons/models';
-const ipcMain = require('electron').ipcMain;
-const cp = require('child_process');
+import { stopProcessTree } from './install-process';
 
 let win: BrowserWindow = null;
+let activeInstaller: cp.ChildProcess | null = null;
 let translations : { [key: string]: string } = {};
-let currentLanguage: string = "English";
+let currentLanguage = "English";
 const args = process.argv.slice(1),
   serve = args.some(val => val === '--serve');
+const isE2E = process.env.AMAI_E2E === 'true';
 
 // needed to call remote inside app
 remote.initialize();
@@ -23,19 +25,28 @@ const isDev = () => {
 }
 
 const installerDirectory = () => path.resolve(__dirname, isDev() ? '../AMAI-release' : '../AMAI');
+const mpqEditorPath = () => isDev()
+  ? path.resolve(__dirname, '../../MPQEditor.exe')
+  : path.join(installerDirectory(), 'MPQEditor.exe');
 const scriptsDirectory = () => isDev()
   ? path.resolve(__dirname, '../../Scripts')
   : path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath), 'Scripts');
 const installerVersions = ['ROC', 'TFT', 'REFORGED', 'OPTROC', 'OPTTFT', 'OPTREFORGED'];
 const missingInstallerFiles = () => [
   path.join(installerDirectory(), 'install.js'),
-  path.join(installerDirectory(), 'MPQEditor.exe'),
+  mpqEditorPath(),
   ...installerVersions.flatMap(version => [
     path.join(scriptsDirectory(), version, 'common.ai'),
     path.join(scriptsDirectory(), version, 'Blizzard.j'),
     path.join(scriptsDirectory(), version, 'vsai', 'Blizzard.j')
   ])
 ].filter(file => !fs.existsSync(file));
+
+const sendToWindow = (channel: string, ...message: unknown[]) => {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, ...message);
+  }
+};
 
 const reportMissingInstallerFiles = (): boolean => {
   const missing = missingInstallerFiles();
@@ -48,18 +59,33 @@ const reportMissingInstallerFiles = (): boolean => {
   return true;
 }
 
+const fitWindowToContent = async (window: BrowserWindow): Promise<void> => {
+  const contentHeight = await window.webContents.executeJavaScript('document.documentElement.scrollHeight') as number;
+  if (window.isDestroyed()) return;
+
+  const bounds = window.getBounds();
+  const frameHeight = bounds.height - window.getContentBounds().height;
+  const workArea = screen.getDisplayMatching(bounds).workArea;
+  const height = Math.min(Math.ceil(contentHeight) + frameHeight, workArea.height);
+
+  window.setBounds({
+    ...bounds,
+    y: workArea.y + Math.max(0, Math.floor((workArea.height - height) / 2)),
+    height
+  });
+};
+
 const createWindow = (): BrowserWindow => {
 
-  const size = screen.getPrimaryDisplay().workAreaSize;
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
 
   // Create the browser window.
   win = new BrowserWindow({
-    x: 0,
-    y: 0,
-    width: size.width,
-    height: size.height,
-    minWidth: 1280,
-    minHeight: 940,
+    width: Math.min(1200, workArea.width),
+    height: Math.min(900, workArea.height),
+    minWidth: Math.min(900, workArea.width),
+    minHeight: Math.min(650, workArea.height),
+    center: true,
     webPreferences: {
       devTools: true,
       nodeIntegration: true,
@@ -72,10 +98,9 @@ const createWindow = (): BrowserWindow => {
   remote.enable(win.webContents);
 
   if (serve) {
-    const debug = require('electron-debug');
-    debug();
-
+    // Loaded only by the development server.
     // hot reload frontend
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('electron-reloader')(module);
     win.loadURL('http://localhost:4200');
   } else {
@@ -91,6 +116,8 @@ const createWindow = (): BrowserWindow => {
     win.loadURL(url.href);
   }
 
+  win.webContents.once('did-finish-load', () => void fitWindowToContent(win));
+
   // Emitted when the window is closed.
   win.on('closed', () => {
     // Dereference the window object, usually you would store window
@@ -102,8 +129,16 @@ const createWindow = (): BrowserWindow => {
   return win;
 }
 
-const execInstall = async (signal, commander: number = 1, isMap: boolean = false, ver: string = "REFORGED", forceLang: boolean) => {
-  const controller = new AbortController();
+type InstallerOperation = 'install' | 'uninstall-commander' | 'uninstall-all';
+
+const execInstall = async (
+  commander = 1,
+  isMap = false,
+  ver = "REFORGED",
+  forceLang = false,
+  disableChat = false,
+  operation: InstallerOperation = 'install'
+) => {
   const response = dialog.showOpenDialogSync(win, {
     // TODO: add i18n here
     title : isMap ? translations["PAGES.ELECTRON.OPEN_MAP"] || '': translations["PAGES.ELECTRON.OPEN_DIR"] || '',
@@ -115,10 +150,7 @@ const execInstall = async (signal, commander: number = 1, isMap: boolean = false
     ] : null,
   });
 
-  let child;
-
-  // passing reference to external call back
-  signal = controller.signal;
+  let child: cp.ChildProcess;
 
   const currentScriptDir = installerDirectory();
 
@@ -136,15 +168,38 @@ const execInstall = async (signal, commander: number = 1, isMap: boolean = false
   // win.webContents.send('on-install-message', `install js path: ../${currentExecDir}install.js`);
 
   if(!response || (response?.length === 0)) {
-    win.webContents.send('on-install-empty');
+    sendToWindow('on-install-empty');
     return;
   }
 
+  if (operation !== 'install') {
+    const confirmKey = operation === 'uninstall-commander'
+      ? 'PAGES.ELECTRON.CONFIRM_UNINSTALL_COMMANDER'
+      : 'PAGES.ELECTRON.CONFIRM_UNINSTALL_ALL';
+    const confirmed = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      title: translations['PAGES.ELECTRON.CONFIRM_TITLE'] || 'Confirm uninstall',
+      message: translations[confirmKey] || 'Remove AMAI files from the selected map or directory?',
+      buttons: [
+        translations['PAGES.ELECTRON.CANCEL'] || 'Cancel',
+        translations['PAGES.ELECTRON.UNINSTALL'] || 'Uninstall'
+      ],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }) === 1;
+    if (!confirmed) {
+      sendToWindow('on-install-empty');
+      return;
+    }
+  }
+
   // open modal on front
-  win.webContents.send('on-install-init', <InstallModel>{
+  sendToWindow('on-install-init', <InstallModel>{
     response: response[0],
     commander,
-    isMap
+    isMap,
+    operation
   });
 
   // Change the relative path from where the script will be executed
@@ -152,29 +207,40 @@ const execInstall = async (signal, commander: number = 1, isMap: boolean = false
   try {
      process.chdir(currentScriptDir);
   } catch(err) {
-    win.webContents.send('on-install-error', err.message);
+    sendToWindow('on-install-error', err.message);
     return;
   }
 
 
   // init install proccess
   try {
+    stopProcessTree(activeInstaller);
     child = cp.fork(
       require.resolve(
         path.join(currentScriptDir, 'install.js')
       ),
-      [ response[0], commander, ver, forceLang ? currentLanguage : '-', scriptsDirectory() ],
-      { signal }
+      [
+        response[0],
+        String(commander),
+        ver,
+        forceLang ? currentLanguage : '-',
+        scriptsDirectory(),
+        mpqEditorPath(),
+        String(disableChat),
+        operation
+      ]
     );
+    activeInstaller = child;
 
     child.on('error', (err) => {
-      win.webContents.send('on-install-error', err.message);
+      stopProcessTree(child);
+      sendToWindow('on-install-error', err.message);
     });
 
     // send messages to modal on front
     child.on('message', (message) => {
-      win.webContents.send(
-        message && typeof message === 'object' && message.type === 'progress'
+      sendToWindow(
+        message && typeof message === 'object' && 'type' in message && message.type === 'progress'
           ? 'on-install-progress'
           : 'on-install-message',
         message
@@ -183,27 +249,31 @@ const execInstall = async (signal, commander: number = 1, isMap: boolean = false
 
     // close modal on process finishes
     child.on('exit', (code) => {
+      if (activeInstaller === child) {
+        activeInstaller = null;
+      }
       if (code) {
-        win.webContents.send('on-install-error', `Installer exited with code ${code}`);
+        sendToWindow('on-install-error', `Installer exited with code ${code}`);
       } else {
-        win.webContents.send('on-install-exit');
+        sendToWindow('on-install-exit');
       }
     });
   } catch(err) {
-    win.webContents.send('on-install-error', err.message);
+    sendToWindow('on-install-error', err.message);
   }
 }
 
 const installProcess = () => {
-  let signal = {};
-
-  ipcMain?.on('install', async (_event, ver: string, toFolder: boolean, commander: number, optimize: boolean, forceLang : boolean) => {
-    execInstall(signal, commander, !toFolder, optimize ? `OPT${ver}` : ver, forceLang);
+  ipcMain?.on('install', async (_event, ver: string, toFolder: boolean, commander: number, optimize: boolean, forceLang: boolean, disableChat: boolean) => {
+    execInstall(commander, !toFolder, optimize ? `OPT${ver}` : ver, forceLang, disableChat);
   });
 
-  // TODO: stop process with signal
+  ipcMain?.on('uninstall', async (_event, toFolder: boolean, scope: 'commander' | 'all') => {
+    execInstall(0, !toFolder, 'REFORGED', false, false, scope === 'commander' ? 'uninstall-commander' : 'uninstall-all');
+  });
+
   ipcMain?.on('on-stop-process', async () => {
-    // stop process here
+    stopProcessTree(activeInstaller);
   });
 }
 
@@ -214,7 +284,7 @@ const init = () => {
     // Some APIs can only be used after this event occurs.
     // Added 400 ms to fix the black background issue while using transparent window. More detais at https://github.com/electron/electron/issues/15947
     app.on('ready', () => {
-      if (reportMissingInstallerFiles()) {
+      if (!isE2E && reportMissingInstallerFiles()) {
         app.quit();
         return;
       }
@@ -226,12 +296,15 @@ const init = () => {
 
     // Quit when all windows are closed.
     app.on('window-all-closed', () => {
+      stopProcessTree(activeInstaller);
       // On OS X it is common for applications and their menu bar
       // to stay active until the user quits explicitly with Cmd + Q
       if (process.platform !== 'darwin') {
         app.quit();
       }
     });
+
+    app.on('before-quit', () => stopProcessTree(activeInstaller));
 
     app.on('activate', () => {
       // On OS X it's common to re-create a window in the app when the
@@ -241,7 +314,7 @@ const init = () => {
       }
     });
 
-  } catch (e) {
+  } catch {
     // Catch Error
     // throw e;
   }

@@ -60,6 +60,7 @@ function global_build_sequence takes nothing returns nothing
     if TownCount(uGHOUL) == 0 and GetWood() < 500 then
       call BuildUnit(1, uGHOUL, ghoul_prio)
     endif
+      call BuildUnit(1, uTOMB_OF_RELICS, 45)
       // Anti rush
     if GetRushFactor() < 5000 then
       call BuildAtMine(1, uZIGGURAT_FROST, 70)
@@ -75,7 +76,7 @@ function global_build_sequence takes nothing returns nothing
     if HasExpanded() then
       call DefendTownsDone(1, uZIGGURAT_2, 45)
       call DefendTownsDone(1, uZIGGURAT_FROST, 40)
-      call DefendTownsDone(1, uTOMB_OF_RELICS, 35)
+      call DefendTownsDone(1, uTOMB_OF_RELICS, 45)
       if GetGold() > 800 then
             call DefendTownsDone(1, uNECROPOLIS_1, 95)
       endif
@@ -205,7 +206,9 @@ function global_build_sequence takes nothing returns nothing
 
     // TIER 3 UPGRADES
     //--------------------------------------------------------
-    if tier == 3 then
+    // Give supporting-ghoul research a moderate priority; ghoul strategies request higher priority.
+    if tier == 3 and TownCountDone(uGHOUL) > 0 then
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 60)
     endif
     call BuildAdvUpgr2(1, uUPG_STONE_FORM,3,TownCountDone(uGARGOYLE),0.33,10,75)
     call BuildAdvUpgr2(1, uUPG_BLK_SPHINX,3,TownCountDone(uOBSIDIAN_STATUE),1,10,90)
@@ -306,6 +309,7 @@ if tier == 3 then
       call BuildUpgr(2, uUPG_BANSHEE, 54)
       
       call BuildUpgr(1, uUPG_BLK_SPHINX, 40)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -416,6 +420,7 @@ if tier == 3 then
       call BuildUpgr(1, uUPG_FIEND_WEB, 66)
       call BuildUpgr(1, uUPG_WYRM_BREATH, 60)
       call BuildUpgr(1, uUPG_BURROWING, 66)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -520,6 +525,7 @@ if tier == 3 then
       call BuildUpgr(1, uUPG_SKEL_MASTERY, 85)
       call BuildUpgr(1, uUPG_EXHUME, 65)
       call BuildUpgr(1, uUPG_PLAGUE, 50)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -620,6 +626,7 @@ if tier == 3 then
 
       call BuildUpgr(2, uUPG_BANSHEE, 86)
       call BuildUpgr(1, uUPG_PLAGUE, 80)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -896,6 +903,7 @@ if tier == 3 then
 
       call BuildUpgr(1, uUPG_FIEND_WEB, 95)
       call BuildUpgr(1, uUPG_BURROWING, 95)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1005,6 +1013,7 @@ if tier == 3 then
       call BuildUpgr(1, uUPG_STONE_FORM, 72)
       call BuildUpgr(1, uUPG_WYRM_BREATH, 55)
       call BuildUpgr(1, uUPG_CANNIBALIZE, 70)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1104,6 +1113,7 @@ if tier == 3 then
       call BuildUpgr(1, uUPG_PLAGUE, 71)
       call BuildUpgr(1, uUPG_CANNIBALIZE, 71)
       call BuildUpgr(1, uUPG_BLK_SPHINX, 40)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1203,6 +1213,7 @@ if tier == 3 then
       call BuildUpgr(1, uUPG_FIEND_WEB, 77)
       call BuildUpgr(1, uUPG_EXHUME, 72)
       call BuildUpgr(1, uUPG_BLK_SPHINX, 40)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1229,6 +1240,7 @@ elseif tier == 2 then
 
       call BuildUpgr(1, uUPG_FIEND_WEB, 69)
       call BuildUpgr(1, uUPG_EXHUME, 58)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1305,6 +1317,7 @@ if tier == 3 then
       call BuildUpgr(1, uUPG_FIEND_WEB, 65)
       call BuildUpgr(1, uUPG_BURROWING, 65)
       call BuildUpgr(1, uUPG_PLAGUE, 45)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1563,6 +1576,7 @@ if tier == 3 then
       call BuildUnit(1, hero[1], 140)
       call BuildUnit(1, hero[2], 130)
       call BuildUnit(1, hero[3], 120)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
       call BuildUpgr(Min((TownCountDone(uMEAT_WAGON) + TownCountDone(uABOMINATION))/4,1), uUPG_PLAGUE, 50)
       call BuildUpgr(Min((TownCountDone(uNECRO)/3),2), uUPG_NECROS, 60)
       call BuildUpgr(Min((TownCountDone(uNECRO)/4),1), uUPG_SKEL_MASTERY, 60)
@@ -1693,6 +1707,7 @@ if tier == 3 then
       call BuildUnit(4, uGHOUL, 55)
       call BuildUpgr(1, uUPG_PLAGUE, 71)
       call BuildUpgr(1, uUPG_CANNIBALIZE, 71)
+      call BuildUpgr(1, uUPG_GHOUL_FRENZY, 115)
 
 
 
@@ -1762,4 +1777,6 @@ else
 
 endif
 endfunction
+
+
 

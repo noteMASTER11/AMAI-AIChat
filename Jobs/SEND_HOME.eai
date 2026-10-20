@@ -3,15 +3,15 @@
 
 function SendHomeMoveUnitToLoc takes unit u, location l returns nothing
 	local integer enemystrength = GetLocationNonCreepStrength(GetUnitX(u), GetUnitY(u), 800)
-	if GetUnitAbilityLevel(u, 'AOwk') > 0 or GetUnitAbilityLevel(u, 'ANwk') > 0 then
+	if GetUnitUsableAbilityLevel(u, 'AOwk') > 0 or GetUnitUsableAbilityLevel(u, 'ANwk') > 0 then
 		if enemystrength > 0 and not IsUnitInvisibleAM(u, Player(PLAYER_NEUTRAL_AGGRESSIVE)) then
 			call IssueImmediateOrder(u, "windwalk")
 		endif
 	endif
-	if enemystrength > 0 and ((GetUnitState(u, UNIT_STATE_MANA) > 50 and GetUnitAbilityLevel(u, 'AEbl') == 1) or (GetUnitState(u, UNIT_STATE_MANA) > 10 and GetUnitAbilityLevel(u, 'AEbl') > 1)) then
+	if enemystrength > 0 and ((GetUnitState(u, UNIT_STATE_MANA) > 50 and GetUnitUsableAbilityLevel(u, 'AEbl') == 1) or (GetUnitState(u, UNIT_STATE_MANA) > 10 and GetUnitUsableAbilityLevel(u, 'AEbl') > 1)) then
 		call IssuePointOrder(u, "blink", GetLocationX(l), GetLocationY(l))
 		call IssuePointOrder(u, "move", GetLocationX(l), GetLocationY(l))
-	elseif GetUnitAbilityLevel(u, 'Ashm') > 0 and enemystrength > 0 and (GetFloatGameState(GAME_STATE_TIME_OF_DAY) >= 18 or GetFloatGameState(GAME_STATE_TIME_OF_DAY) < 6) and not IsUnitType(u, UNIT_TYPE_HERO) then
+	elseif GetUnitUsableAbilityLevel(u, 'Ashm') > 0 and enemystrength > 0 and (GetFloatGameState(GAME_STATE_TIME_OF_DAY) >= 18 or GetFloatGameState(GAME_STATE_TIME_OF_DAY) < 6) and not IsUnitType(u, UNIT_TYPE_HERO) then
 		call CreateDebugTag("SEND_HOME: Night Hide", 10, u, 3.00, 1.50)
 		call IssueImmediateOrder(u, "ambush")
 	else
@@ -29,7 +29,7 @@ function SomeUnitHasHealingItem takes unit ru, unit u, integer rhi returns unit
 	loop
 		set ru = FirstOfGroup(g)
 		exitwhen ru == null
-		if GetUnitAbilityLevel(u, 'AInv') > 0 and GetItemNumberOnUnit(rhi, ru) > 0 then
+		if GetUnitUsableAbilityLevel(u, 'AInv') > 0 and GetItemNumberOnUnit(rhi, ru) > 0 then
 			call DestroyGroup(g)
 			set g = null
 			return ru
@@ -52,6 +52,8 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
   local integer enemystrength = 0
   local unit otherhero = null
   local item it = null
+  local boolean ward_recovery = false
+  local real home_distance = 0
 
   call DisplayToAllJobDebug("SEND_HOME Job")
 
@@ -61,8 +63,15 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
     return
   endif
   if IsUnitType(u, UNIT_TYPE_HERO) then
-    set racial_healing_item = GetHeroHealingItem()
+    set racial_healing_item = GetCarriedHeroHealingItem(u)
+    if racial_healing_item == 0 then
+      set racial_healing_item = GetHeroHealingItem()
+    endif
     set racial_mana_item = GetHeroManaItem()
+    // Finish shopping before using the item, so later buy checks cannot interrupt healing.
+    if shop_ordered and shop_sent == u and racial_healing_item != 0 and GetItemNumberOnUnit(racial_healing_item, u) > 0 then
+      call EndBuyItemJob(false)
+    endif
     if racial_healing_item != 0 then
       set otherhero = SomeUnitHasHealingItem(otherhero, u, racial_healing_item)
       if buy_type[racial_healing_item] == BT_RACIAL_ITEM then
@@ -85,8 +94,12 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
   call DisplayToAllJobDebug("SEND_HOME Starting check")
 
   if GetUnitState(u, UNIT_STATE_LIFE) >= GetUnitState(u, UNIT_STATE_MAX_LIFE) * (I2R(60)/100) and GetUnitCurrentOrder(u) != OrderId("cannibalize") then
+    call GroupRemoveUnit(ward_recovery_patients, u)
     call CreateDebugTag("SEND_HOME Healed", 10, u, 3.00, 1.50)	
-    call TQAddUnitJob(2, RESET_GUARD_POSITION, 0, u)
+    if shop_ordered and shop_sent == u then
+      call EndBuyItemJob(false)
+    endif
+    call ResetGuardPositionJob(u)
   elseif racial_healing_item != 0 and GetItemNumberOnUnit(racial_healing_item, u) > 0 then
     call CreateDebugTag("Hero: Use healing item", 10, u, 3.00, 2.00)
     if GetItemInstantType(racial_healing_item) == ITEMTYPE_CONTINUOUS and DistanceBetweenPoints_dk(GetUnitLoc(u), captain_home) >= 1200 then
@@ -106,7 +119,7 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
   elseif otherhero != null and IsUnitType(u, UNIT_TYPE_HERO) then
       if GetSlotsFreeOnUnit(u) > 0 then  // prevent create on the ground
         call UnitAddItem(u, GetItemOfTypeOnUnit(racial_healing_item, otherhero))
-        call TQAddUnitJob(2, RESET_GUARD_POSITION, 0, u)
+        call TQAddUnitJob(2, SEND_HOME, p, u)
       else
         call TQAddUnitJob(4, SEND_HOME, p, u)
       endif
@@ -118,16 +131,24 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
         set l = null
         call TQAddUnitJob(4, SEND_HOME, p, u)
       else
-        call CreateDebugTag("SEND_HOME Stop at Shop", 10, u, 3.00, 2.00)	
-        call IssueImmediateOrder(u, "holdposition") // use hold position as stop will cancel panda clones for the hero (and possibly other special abilities)
-        call IssueNeutralImmediateOrderById(ai_player, nearshopunit, old_id[racial_healing_item])
-        if GetUnitState(u, UNIT_STATE_MANA) < 100 and racial_mana_item != 0 and GetItemNumberOnUnit(racial_mana_item, u) <= 0 then
-          call IssueNeutralImmediateOrderById(ai_player, nearshopunit, old_id[racial_mana_item])
+        call CreateDebugTag("SEND_HOME Stop at Shop", 10, u, 3.00, 2.00)
+        // An active shopping job handles the purchase; SendHome keeps its healing checks.
+        if not shop_ordered or shop_sent != u then
+          call IssueImmediateOrder(u, "holdposition") // use hold position as stop will cancel panda clones for the hero (and possibly other special abilities)
+          if GetUnitTypeId(nearshopunit) == old_id[racial_shop] then
+            call IssueTargetOrderById(nearshopunit, 'Aall', u)
+          endif
+          call IssueNeutralImmediateOrderById(ai_player, nearshopunit, old_id[racial_healing_item])
+          if GetUnitState(u, UNIT_STATE_MANA) < 100 and racial_mana_item != 0 and GetItemNumberOnUnit(racial_mana_item, u) <= 0 then
+            call IssueNeutralImmediateOrderById(ai_player, nearshopunit, old_id[racial_mana_item])
+          endif
         endif
-        call TQAddUnitJob(2, RESET_GUARD_POSITION, 0, u)  // end job
+        call TQAddUnitJob(2, SEND_HOME, p, u)
       endif
   else
-      if DistanceBetweenPoints_dk(GetUnitLoc(u), captain_home) >= 1200 then
+      set ward_recovery = RequestWardRecovery(u)
+      set home_distance = DistanceBetweenPoints_dk(GetUnitLoc(u), captain_home)
+      if home_distance >= 1200 or (ward_recovery and home_distance > 300) then
        call RemoveGuardPosition(u)  // prevent town_threatened give control , but not restore , causing hesitation                                                                   
        call SendHomeMoveUnitToLoc(u,captain_home)
        if follow_zeppelin != null and IsStandardUnit(follow_zeppelin) and not IsUnitType(u, UNIT_TYPE_FLYING) then
@@ -141,22 +162,27 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
          return
        endif
       else
-        if town_threatened and GetLocationNonCreepStrength(GetUnitX(u), GetUnitY(u), 1500) > 0 then  // only need to control the unit if it is attacked nearby, otherwise will be killed
+        if ward_recovery then
+          // Stay within the ward's area while healing, without interrupting spells.
+          if GetUnitCurrentOrder(u) == 0 or GetUnitCurrentOrder(u) == OrderId("move") or GetUnitCurrentOrder(u) == OrderId("attack") or GetUnitCurrentOrder(u) == OrderId("smart") then
+            call IssueImmediateOrder(u, "holdposition")
+          endif
+        elseif town_threatened and GetLocationNonCreepStrength(GetUnitX(u), GetUnitY(u), 1500) > 0 then  // only need to control the unit if it is attacked nearby, otherwise will be killed
           call CreateDebugTag("SEND_HOME town_threatened", 10, u, 3.00, 1.50)
           call RecycleGuardPosition(u)   // Gives unit control for only a little bit but dosn't remove from healing group
-        elseif GetUnitAbilityLevel(u, 'Ashm') > 0 and (GetFloatGameState(GAME_STATE_TIME_OF_DAY) >= 18 or GetFloatGameState(GAME_STATE_TIME_OF_DAY) < 6) and not IsUnitType(u, UNIT_TYPE_HERO) then
+        elseif GetUnitUsableAbilityLevel(u, 'Ashm') > 0 and (GetFloatGameState(GAME_STATE_TIME_OF_DAY) >= 18 or GetFloatGameState(GAME_STATE_TIME_OF_DAY) < 6) and not IsUnitType(u, UNIT_TYPE_HERO) then
           call RemoveGuardPosition(u)
           call IssueImmediateOrder(u, "ambush")
           call CreateDebugTag("SEND_HOME hide", 10, u, 3.00, 1.50)
-        elseif GetUnitAbilityLevel(u, 'Abur') > 0 and not IsUnitInvisibleAM(u, Player(PLAYER_NEUTRAL_AGGRESSIVE)) then
+        elseif GetUnitUsableAbilityLevel(u, 'Abur') > 0 and not IsUnitInvisibleAM(u, Player(PLAYER_NEUTRAL_AGGRESSIVE)) then
           call RemoveGuardPosition(u)
           call IssueImmediateOrder(u, "burrow")
           call CreateDebugTag("SEND_HOME burrow", 10, u, 3.00, 1.50)
-        elseif GetUnitAbilityLevel(u, 'Astn') > 0 and GetUnitAbilityLevel(u, 'ACmi') == 0 then
+        elseif GetUnitUsableAbilityLevel(u, 'Astn') > 0 and GetUnitUsableAbilityLevel(u, 'ACmi') == 0 then
           call RemoveGuardPosition(u)
           call IssueImmediateOrder(u, "stoneform")
           call CreateDebugTag("SEND_HOME stone", 10, u, 3.00, 1.50)  
-        elseif GetUnitCurrentOrder(u) != OrderId("cannibalize") and (GetUnitAbilityLevel(u, 'Acn2') > 0 or GetUnitAbilityLevel(u, 'Acan') > 0 or GetUnitAbilityLevel(u, 'ACcn') > 0) then
+        elseif GetUnitCurrentOrder(u) != OrderId("cannibalize") and (GetUnitUsableAbilityLevel(u, 'Acn2') > 0 or GetUnitUsableAbilityLevel(u, 'Acan') > 0 or GetUnitUsableAbilityLevel(u, 'ACcn') > 0) then
           set g = CreateGroup()
           call GroupEnumUnitsInRangeOfLoc(g, captain_home, 1000, null)
           loop
@@ -182,7 +208,7 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
                 exitwhen UnitAlive(corpse) and IsUnitType(corpse, UNIT_TYPE_TOWNHALL)
                 call GroupRemoveUnit(g, corpse)
             endloop
-            if corpse != null and GetUnitAbilityLevel(u, 'Ahrl') > 0 and GetUnitCurrentOrder(u) != OrderId("cannibalize") then   // 'Ahrl' Ghoul Harvest lumber ability
+            if corpse != null and GetUnitUsableAbilityLevel(u, 'Ahrl') > 0 and GetUnitCurrentOrder(u) != OrderId("cannibalize") then   // 'Ahrl' Ghoul Harvest lumber ability
               call RemoveGuardPosition(u)
               if GetUnitCurrentOrder(u) == OrderId("harvest") or GetUnitCurrentOrder(u) == OrderId("resumeharvesting") then
               else
@@ -195,21 +221,21 @@ function SendUnitHomeJob takes unit u, integer p returns nothing
             set g = null
           endif
           // Below attempt to heal myself
-        elseif (GetUnitAbilityLevel(u, 'Ahwd') > 0 or GetUnitAbilityLevel(u, 'AChw') > 0) and not ward_cast then
+        elseif (GetUnitUsableAbilityLevel(u, 'Ahwd') > 0 or GetUnitUsableAbilityLevel(u, 'AChw') > 0) and not ward_cast then
           call RemoveGuardPosition(u)
           call IssuePointOrder(u, "healingward", GetUnitX(u), GetUnitY(u))
           call CreateDebugTag("SEND_HOME use healingward " + B2S(ward_cast), 10, u, 3.00, 1.50)
-        elseif GetUnitAbilityLevel(u, 'AChv') > 0 or (IsUnitType(u, UNIT_TYPE_HERO) and (GetUnitAbilityLevel(u, 'AOhw') > 0 or GetUnitAbilityLevel(u, 'ANhw') > 0)) then
+        elseif GetUnitUsableAbilityLevel(u, 'AChv') > 0 or (IsUnitType(u, UNIT_TYPE_HERO) and (GetUnitUsableAbilityLevel(u, 'AOhw') > 0 or GetUnitUsableAbilityLevel(u, 'ANhw') > 0)) then
           call RemoveGuardPosition(u)
           call IssueTargetOrder(u, "healingwave", u)
           call CreateDebugTag("SEND_HOME heal wave", 10, u, 3.00, 1.50)
-        elseif GetUnitAbilityLevel(u, 'ANhs') > 0 then
+        elseif GetUnitUsableAbilityLevel(u, 'ANhs') > 0 then
           call RemoveGuardPosition(u)
           call IssuePointOrder(u, "healingspray", GetUnitX(u), GetUnitY(u))
           call CreateDebugTag("SEND_HOME heal spray", 10, u, 3.00, 1.50)
-        elseif GetUnitAbilityLevel(u, 'Abrf') > 0 or GetUnitAbilityLevel(u, 'Arej') > 0 or GetUnitAbilityLevel(u, 'ACrj') > 0 or GetUnitAbilityLevel(u, 'ACr2') > 0 then
+        elseif GetUnitUsableAbilityLevel(u, 'Abrf') > 0 or GetUnitUsableAbilityLevel(u, 'Arej') > 0 or GetUnitUsableAbilityLevel(u, 'ACrj') > 0 or GetUnitUsableAbilityLevel(u, 'ACr2') > 0 then
           call RemoveGuardPosition(u)
-          if GetUnitAbilityLevel(u, 'Abrf') > 0 then
+          if GetUnitUsableAbilityLevel(u, 'Abrf') > 0 then
             call IssueImmediateOrder(u, "unbearform")
           endif
           call IssueTargetOrder(u, "rejuvination", u)

@@ -1,6 +1,8 @@
 {
     "PAGES": {
       "HOME": {
+          "OPTIMAL": "Ideal:",
+          "DESTINATION": "Destino",
         "TITLE": "Instalador do AMAI",
         "CHOOSE_GAME_VERSION": "Escolher versão do jogo",
         "ADVANCED_SETTING": "Configurações avançadas",
@@ -10,17 +12,52 @@
         "INCLUDE_COMMANDER_VSAI": "Contra IA Vanilla", 
         "INCLUDE_COMMANDER_OFF": "Sem Comandante",
         "OPTIMISE": "Usar scripts otimizados", 
-        "FORCELANG": "Substituir a linguagem de conversação AI"
+        "FORCELANG": "Substituir a linguagem de conversação AI",
+        "DISABLE_CHAT": "Desativar conversa da IA",
+        "UNINSTALL_COMMANDER": "Desinstalar comandante",
+        "UNINSTALL_ALL": "Desinstalar tudo"
       },
       "APP": {
+        "INSTALL_FAILED": "Falha na instalação",
+        "LOG": "Registo da instalação",
+        "CLOSE": "Fechar",
         "INSTALLING": "Instalando em {{path}}",
         "INSTALLING_DIR": "Instalando no diretório: {{path}}",
-        "INSTALL_DONE": "Instalação concluída"
+        "INSTALL_DONE": "Instalação concluída",
+        "UNINSTALLING": "A desinstalar de {{path}}",
+        "UNINSTALLING_DIR": "A desinstalar do diretório: {{path}}",
+        "UNINSTALL_DONE": "Desinstalação concluída",
+        "INSTALL_LOG": {
+          "MISSING_FILES": "ERRO: Não foi possível encontrar os ficheiros necessários do instalador:\n{{files}}",
+          "START": "A instalar AMAI {{version}}; comandante: {{commander}}; idioma da IA: {{language}}",
+          "MAP_START": "A instalar {{version}} em: {{file}}",
+          "NO_WRITE_PERMISSION": "Não é possível escrever em {{file}} e a instalação não pôde ser concluída",
+          "PERMISSION_FAILURE": "{{file}}: {{operation}} falhou. Verifique as permissões e o UAC do Windows e confirme que o mapa não está numa localização protegida",
+          "UNKNOWN_FAILURE": "{{file}}: {{operation}} pode ter falhado com o estado {{status}}",
+          "SYSTEM_ERROR": "Erro do sistema: {{detail}}",
+          "RESIZE_SUCCESS": "Tabela hash do mapa redimensionada: {{file}}",
+          "AI_SUCCESS": "Scripts de IA adicionados: {{file}}",
+          "VSAI_SUCCESS": "Scripts de IA VS Vanilla adicionados: {{file}}",
+          "COMMANDER_SUCCESS": "Comandante adicionado: {{file}}",
+          "VSAI_COMMANDER_SUCCESS": "Comandante VS Vanilla AI adicionado: {{file}}",
+          "OPTIMIZE_SUCCESS": "MPQ do mapa otimizado: {{file}}",
+          "INSTALL_FAILURE": "Falha na instalação: {{error}}",
+          "CHAT_SETTING_FAILURE": "Não foi possível configurar a conversa da IA: {{error}}",
+          "UNINSTALL_START": "A desinstalar ficheiros AMAI de {{count}} mapa(s)",
+          "UNINSTALL_MAP_START": "A desinstalar de: {{file}}",
+          "COMMANDER_REMOVED": "Comandante removido: {{file}}",
+          "ALL_REMOVED": "Todos os ficheiros AMAI removidos: {{file}}"
+        }
       },
       "ELECTRON": {
         "OPEN_MAP": "Abrir arquivo de mapa WC3",
         "OPEN_DIR": "Abrir diretório de mapas AMAI",
-        "MAPFILE": "Arquivo de mapa WC3"
+        "MAPFILE": "Arquivo de mapa WC3",
+        "CONFIRM_TITLE": "Confirmar desinstalação",
+        "CONFIRM_UNINSTALL_COMMANDER": "Remover o comandante de todos os mapas selecionados?",
+        "CONFIRM_UNINSTALL_ALL": "Remover todos os scripts AMAI e o comandante de todos os mapas selecionados?",
+        "CANCEL": "Cancelar",
+        "UNINSTALL": "Desinstalar"
       },
       "MENU": {
         "SELECT_LANG": "Selecionar idioma",

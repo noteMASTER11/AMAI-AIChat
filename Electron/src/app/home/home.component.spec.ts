@@ -1,17 +1,21 @@
 import { ComponentFixture, TestBed, waitForAsync } from '@angular/core/testing';
-
-import { HomeComponent } from './home.component';
+import { FormsModule } from '@angular/forms';
 import { TranslateModule } from '@codeandweb/ngx-translate';
-import { RouterTestingModule } from '@angular/router/testing';
+import { HomeComponent } from './home.component';
+import { ElectronService } from '../core/services/electron/electron.service';
+import { electronServiceStub } from '../../testing/electron-service.stub';
+import { MockInstance, vi } from 'vitest';
 
 describe('HomeComponent', () => {
   let component: HomeComponent;
   let fixture: ComponentFixture<HomeComponent>;
+  let send: MockInstance;
 
   beforeEach(waitForAsync(() => {
+    send = vi.spyOn(electronServiceStub.ipcRenderer, 'send');
     TestBed.configureTestingModule({
-      declarations: [HomeComponent],
-      imports: [TranslateModule.forRoot(), RouterTestingModule]
+      providers: [{ provide: ElectronService, useValue: electronServiceStub }],
+      imports: [HomeComponent, FormsModule, TranslateModule.forRoot()]
     }).compileComponents();
 
     fixture = TestBed.createComponent(HomeComponent);
@@ -19,14 +23,66 @@ describe('HomeComponent', () => {
     fixture.detectChanges();
   }));
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
+  it('defaults to the recommended Reforged directory configuration', () => {
+    expect(component.selectedVersion).toBe('REFORGED');
+    expect(component.toFolder).toBe(true);
+    expect(component.commander).toBe(1);
+    expect(component.optimize).toBe(true);
+    expect(component.forceLanguage).toBe(false);
+    expect(component.disableChat).toBe(false);
+    expect((fixture.nativeElement.querySelector('#edition-REFORGED') as HTMLInputElement).checked).toBe(true);
   });
 
-  it('should render title in a h1 tag', waitForAsync(() => {
-    const compiled = fixture.debugElement.nativeElement;
-    expect(compiled.querySelector('h1').textContent).toContain(
-      'PAGES.HOME.TITLE'
-    );
-  }));
+  it('selects an edition without starting installation', () => {
+    const tft = fixture.nativeElement.querySelector('#edition-TFT') as HTMLInputElement;
+    tft.click();
+    fixture.detectChanges();
+
+    expect(component.selectedVersion).toBe('TFT');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('starts installation with the selected options only from the install button', () => {
+    component.selectedVersion = 'ROC';
+    component.toFolder = false;
+    component.commander = 2;
+    component.optimize = false;
+    component.forceLanguage = true;
+
+    (fixture.nativeElement.querySelector('#install-button') as HTMLButtonElement).click();
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('install', 'ROC', false, 2, false, true, false);
+  });
+
+  it('allows chat and language settings with optimised scripts in either selection order', () => {
+    const toggle = (id: string) => {
+      (fixture.nativeElement.querySelector(`#${id}`) as HTMLInputElement).click();
+      fixture.detectChanges();
+    };
+
+    toggle('force-language');
+    toggle('disable-chat');
+    expect(component.forceLanguage).toBe(true);
+    expect(component.disableChat).toBe(true);
+    expect(component.optimize).toBe(true);
+
+    toggle('optimise');
+    expect(component.optimize).toBe(false);
+    toggle('optimise');
+    expect(component.optimize).toBe(true);
+    expect(component.forceLanguage).toBe(true);
+    expect(component.disableChat).toBe(true);
+
+    component.install();
+    expect(send).toHaveBeenCalledExactlyOnceWith('install', 'REFORGED', true, 1, true, true, true);
+  });
+
+  it('requests commander and full uninstalls for the selected destination', () => {
+    component.toFolder = false;
+    (fixture.nativeElement.querySelector('#uninstall-commander-button') as HTMLButtonElement).click();
+    (fixture.nativeElement.querySelector('#uninstall-all-button') as HTMLButtonElement).click();
+
+    expect(send).toHaveBeenNthCalledWith(1, 'uninstall', false, 'commander');
+    expect(send).toHaveBeenNthCalledWith(2, 'uninstall', false, 'all');
+  });
 });

@@ -209,7 +209,7 @@ endfunction
 //===========================================================================
 function chooseStrategyRP takes nothing returns nothing
 #INCLUDETABLE <$VER$\$RACE$\Strategy.txt> #EFR
-  set rp_strat[#EVAL{%row-1}] = %13
+  set rp_strat[STRAT_%1] = %13
 #ENDINCLUDE
 
   call AddFavoriteUnitRP()
@@ -598,7 +598,7 @@ function attack_sequence_all takes nothing returns nothing
   if ver_heroes then
   loop
       exitwhen TownCountDone(hero[1]) > 0 or desperation_assault
-      call StaggerSleep(2 * sleep_multiplier, 2 * sleep_multiplier + 2)
+      call StaggerSleep(sleep_multiplier, 0.5 * sleep_multiplier)
   //    call Trace("Attack Loop1")
   endloop
   endif
@@ -628,7 +628,7 @@ function attack_sequence_all takes nothing returns nothing
         call Trace("RACIAL ATTACK: Assigning Peons")
         loop
           exitwhen peons_assigned or desperation_assault
-          call StaggerSleep(2, 3)
+          call StaggerSleep(1, 0.5)
         endloop
         call Trace("RACIAL ATTACK: exit Assigning Peons")
       endif
@@ -636,7 +636,7 @@ function attack_sequence_all takes nothing returns nothing
       call Trace("RACIAL ATTACK: waiting for troops")
       loop
         exitwhen GetOwnStrength() >= minimum_attack_strength or desperation_assault
-        call StaggerSleep(5 * sleep_multiplier, 5 * sleep_multiplier + 2)
+        call StaggerSleep(2 * sleep_multiplier, sleep_multiplier)
       endloop
       call Trace("RACIAL ATTACK: exit waiting troops")
 
@@ -646,7 +646,7 @@ function attack_sequence_all takes nothing returns nothing
       set ghouls_in_attack = false
     endif
 
-    call StaggerSleep(sleep_multiplier,sleep_multiplier + 2)
+    call StaggerSleep(sleep_multiplier, 0.5 * sleep_multiplier)
   endloop
 endfunction
 
@@ -658,7 +658,7 @@ function harvest_gold takes integer townid returns nothing
   if townid < own_town_num then
     set town_idx = own_town[townid]
     if TownHasMine(townid) or GetResourceAmount(town_mine[town_idx]) > 0 then
-      call HarvestGold(townid,ver_optimal_gold)
+      call HarvestGold(townid,GetHarvestGoldTarget())
     endif
   endif
 endfunction
@@ -675,6 +675,7 @@ function ReturnGhoulsToHarvest takes nothing returns nothing
 
   call FlushUnitHashtable(returning_ghouls, 0, 0)
   set returning_group = ReturnLivingUnitsOfHashtable(returning_ghouls, 0, 0, returning_group)
+  call DestroyGroup(g)
   set g = CopyGroup(returning_group)
   loop
     set u = FirstOfGroup(g)
@@ -794,7 +795,7 @@ function KeepHarvestLocal takes nothing returns nothing
         if IsUnitInGroup(u, early_remote_builders) and not IsConstructionOrder(GetUnitCurrentOrder(u)) then
           call GroupRemoveUnit(early_remote_builders, u)
         endif
-        if not IsUnitInGroup(u, harvestgrp) and not IsUnitInGroup(u, early_remote_builders) and DistanceBetweenPoints_dk(GetUnitLoc(u), home_location) > front_base_distance * 1.25 and IsConstructionOrder(GetUnitCurrentOrder(u)) and (racial_rushcreep == 0 or (TownCount(racial_rushcreep) <= 0 and GetUnitCurrentOrder(u) != old_id[racial_rushcreep])) and GetUnitCurrentOrder(u) != old_id[racial_expansion] then // going on adventure building far away too early so force them back
+        if not IsUnitInGroup(u, harvestgrp) and not IsUnitInGroup(u, early_remote_builders) and not IsTrackedTownBuilder(u) and DistanceBetweenPoints_dk(GetUnitLoc(u), home_location) > front_base_distance * 1.25 and IsConstructionOrder(GetUnitCurrentOrder(u)) and (racial_rushcreep == 0 or (TownCount(racial_rushcreep) <= 0 and GetUnitCurrentOrder(u) != old_id[racial_rushcreep])) and GetUnitCurrentOrder(u) != old_id[racial_expansion] then // going on adventure building far away too early so force them back
           set buildu = CreatePathingUnitFull(buildu, Player(PLAYER_NEUTRAL_PASSIVE), GetUnitCurrentOrder(u), GetLocationX(home_location) + ISign() * GetRandomReal(500, 1000), GetLocationY(home_location) + ISign() * GetRandomReal(-1000, -500))
           set buildx = GetUnitX(buildu)
           set buildy = GetUnitY(buildu)
@@ -885,6 +886,7 @@ function build_sequence_all takes nothing returns nothing
     endif
 
     if last_strategy != strategy then
+      set adaptive_force_refresh = true
       set last_strategy = strategy
       set reportStrategy = true
       call SetRaceAggression()
@@ -903,7 +905,7 @@ function build_sequence_all takes nothing returns nothing
       call SetTextTagPermanent(debugstrattag, true)
     endif
 
-    if (x > counter_timer and counter_timer < 0) or reset_counter then
+    if not AdaptiveCountersEnabled() and ((x > counter_timer and counter_timer < 0) or reset_counter) then
       set chosen_counter = DetermineCounterForce()
       call InitBuildArrayAM()
       if last_counter != chosen_counter and (debugging > 0 or GetRandomInt(1,5) == 1) then // Only randomly report counter changes to allies not every single time unless debug mode is on
@@ -916,23 +918,10 @@ function build_sequence_all takes nothing returns nothing
         set counter_timer = 2 // Once fired don't change again until strategy changes
       endif
     endif
-   if debugging > 0 then
-      call UpdateDebugTextTag(debugcountertag, "Counter:" + strengthtext[chosen_counter], 18, GetLocationX(home_location) - 600, GetLocationY(home_location) - 600)
-      call SetTextTagPermanent(debugcountertag, true)
-   endif
-
-    if reportStrategy then
-      set reportStrategy = false
-      if chatting then
-        call QueueStrategy(GetCurrentStrategyReport() + GetCurrentDynamicReport())
-      endif
-      //call DisplayToAlliesImportant( GetCurrentStrategyReport() + GetCurrentDynamicReport())
-      //call DisplayToObserversImportant( GetCurrentStrategyReport() + GetCurrentDynamicReport())
-    endif
-
     set new_tier = GetTier()
     if tier != new_tier then
       set tier = new_tier
+      set adaptive_force_refresh = true
       //call Trace("BUILD SEQUENCE: initbuildarray2")
       call InitBuildArrayAM()
     endif
@@ -943,6 +932,16 @@ function build_sequence_all takes nothing returns nothing
     if set_counter == true then 
       call DynamicStrategySelector()
       set set_counter = false
+    endif
+    if debugging > 0 then
+      call UpdateDebugTextTag(debugcountertag, GetCounterDebugReport(), 18, GetLocationX(home_location) - 600, GetLocationY(home_location) - 600)
+      call SetTextTagPermanent(debugcountertag, true)
+    endif
+    if reportStrategy then
+      set reportStrategy = false
+      if chatting then
+        call QueueStrategy(GetCurrentStrategyReport() + GetCurrentDynamicReport())
+      endif
     endif
     call Sleep(3 * sleep_multiplier)
     //call Trace("BUILD SEQUENCE: peon_assignment 2")	  
@@ -1004,7 +1003,7 @@ function main takes nothing returns nothing
   set chosen_counter = DetermineCounterForce()
    if debugging > 0 then
     //set debugcountertag = CreateTextTag()
-    call UpdateDebugTextTag(debugcountertag, "Counter:" + strengthtext[chosen_counter], 18, GetLocationX(home_location) - 600, GetLocationY(home_location) - 600)
+    call UpdateDebugTextTag(debugcountertag, GetCounterDebugReport(), 18, GetLocationX(home_location) - 600, GetLocationY(home_location) - 600)
     call SetTextTagPermanent(debugcountertag, true)
   endif
   set chosen_strategy = choose_strategy()

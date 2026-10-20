@@ -3,21 +3,107 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
-## [Unreleased]
+## Unreleased
 
 ### Added
 
-- Design specification for local Russian-language LLM bot chat through Codex App Server.
-- Experimental opt-in local JASS event collector and Codex App Server bridge using GPT-6.1 Sol with low reasoning effort, per-bot Russian personalities, bounded scheduling, and a separate transport probe map builder.
-- Reversible installation, protocol/process self-checks and Russian local setup instructions.
-- Local React monitoring console with live SSE telemetry, conversations, request timing, authoritative token usage, delivery acknowledgements, queue, JSON inspection and export.
-- Bridge health snapshots and one-shot global installation after Warcraft III exits.
+- (AI chat) Local single-human JASS melee matches can use contextual Russian bot conversations through Codex App Server with GPT-6.1 Sol and low effort. Bots can address players or other bots; allied conversations use team channels, with one bounded followup per exchange.
+- (AI chat) Hero deaths, revival, movement, construction, upgrades, research, skills and inventory snapshots provide observable context. Each request uses a bounded text chunk and a fresh model thread. Event valence and directed relationship scores are tracked separately and influence tone.
+- (Installer) Reversible global script replacement, exact-file backups and one-time installation after Warcraft exits.
+- (Monitoring) Local React console with live telemetry, player/bot dialogue, channel and delivery state, token usage, latency, queue, relationships, JSON inspection and export.
+- (devtools) Protocol, scheduling, context, relationship, monitoring API and installation regression checks.
 
 ### Changed
 
-- While LLM chat is enabled, AMAI template conversations and pending chat lines are muted; Commander responses remain available.
-- Local JASS melee matches enable the LLM collector automatically after AI startup. The separate probe map is optional.
-- Current bot roster is included outside the rolling event history; mixed-session snapshots are rejected, and reply deadlines are enforced across the file transport.
+- (AI chat) AMAI template conversations and queued lines are muted while LLM mode is active; unavailable model responses remain silent. Commander control replies remain available.
+- (AI chat) The collector starts automatically in new supported melee matches. The separate diagnostic map is optional. Only observed game acknowledgements confirm transport.
+
+## 3.8.0 - 2026-10-17
+
+### Added
+
+- Added the `stop_creeping_after_level_5` global setting, enabled by default for TFT and Reforged and disabled for ROC. The AI stops creeping with nothing else to do once all trained heroes are level 5 or higher. Expansion clearing is unchanged; disable the setting to keep idle creeping at higher levels.
+- Undead now fund mine recovery by selling surplus buildings at exhausted expansions before spare plain ziggurats, keeping defensive towers as a last resort. They preserve the last hall and shop, buildings at rebuildable mines, and supply for a missing acolyte.
+- Expansion building counts, construction and upgrades now use the same AMAI-tracked town for all races, avoiding reliance on Warcraft's native separate town numbering. Construction waits for an outstanding worker order or foundation before issuing another order, and town-specific upgrades select buildings assigned to that town.
+- (devtools) Added a Keep a Changelog skill to help contributors write clear, consistent changelog entries and prepare release sections.
+- (devtools) Added the Ponytail coding skill for contributors, that favor simple solutions and fewer dependencies.
+- (Installer) Optimized scripts preserve the `chatting` and `language` variable names, allowing the installer to customize AI chat and language while using optimization.
+
+### Changed
+
+- Hero strength now reflects learned abilities and available mana, with reduced level growth and smaller bonuses for passive skills. Summoning skills add a small readiness allowance alongside the strength of creatures already summoned, and ultimates contribute only when learned, improving early creep and combat assessments.
+- Town defense now detects lone attackers and confirms nearby worker, Ancient and tower intrusions before responding. Local defenders intercept confirmed intruders while the main army keeps fighting until pressure or sustained tower construction warrants returning. Retreat assessments include hostile towers and attacking Ancients.
+- Supply construction now responds to lost unfinished farms, burrows, moon wells, and ziggurats by targeting two buildings under construction, rising to at most three under repeated losses. Recovery uses normal base placement and ends after 60 game seconds without another detected loss.
+- Reforged and TFT armies now adjust to several enemy threats while keeping their usual strategy. Previously, dynamic counters focused on one threat at a time. The AI now checks the troops it already has or is training and can add two suitable unit types. For example, a Human army facing flying enemies and spellcasters can add Riflemen to shoot down flyers and Spell Breakers to deal with casters. It sets aside a limited amount of population space for missing counters. If the army is full, it waits for losses and gives those counters first use of the freed space, without removing existing troops. Once its strategy and counter needs are met, it keeps building reinforcements with spare population.
+- Reforged Shadow Hunters now learn Healing Wave first and focus on healing and Serpent Wards before Hex. Death Knights learn Death Pact at level four while retaining rank-three Death Coil at level five. (messi-818)
+- Reforged Human, Orc and Undead strategy preferences incorporate reviewed counter-rating adjustments from messi-818, while retaining the strengths of riflemen, mortars, fiends and Frost Wyrms.
+- All Reforged Undead strategies can now research Ghoul Frenzy at tier three when completed ghouls are present, with a lower priority for supporting ghouls than for ghoul-focused armies. (messi-818)
+- Expansion checks now skip untouched rebuild sites and rejected mines earlier, and shared-style mine claims avoid unnecessary nearest-mine searches.
+- Army tracking now filters unsuitable units before searching for new armies, reduces temporary location creation, and spreads large unit and threat scans across short waits.
+- Focus-fire kiting now searches only nearby melee threats, skips units already handled in overlapping battle areas, and spreads large searches across short waits. Channeling protection also uses fewer unit scans.
+- Shortened build, combat and background polling intervals to keep recurring staggered waits below ten seconds with the shipped AI-count settings. Healing effects wait in game seconds and check for attacks every two seconds instead of stretching their duration with AI-count throttling.
+- Automatic repairs now account for gold, lumber, and each race's worker economy, using smaller emergency reserves under threat and returning to harvesting as resources run low.
+- Rebalanced Reforged Undead strategy counter ratings. (Powerer)
+- Dynamic strategy upgrades are attempted more frequently when the AI has large gold and lumber surpluses.
+- Reforged Human and Orc expansions now request racial shops earlier, while Undead requests an early main-base Tomb of Relics and gives expansion Tombs a slightly higher priority. (Powerer)
+- Night Elf, Orc and Human harvest controls now release two gold workers for lumber when lumber is below 200 and gold is above 300, and restore full mining when resources recover. Undead keeps its separate acolyte and ghoul workforces.
+- Chinese language updates (jzy-chitong56)
+- (Installer) Modernised the Electron interface with a responsive Warcraft-themed layout, explicit version selection and install action, accessible settings, in-app language and About controls, and a focused installation progress dialog.
+- (Installer) Replaced the Jasmine and Karma unit-test setup with Vitest for both Angular and installer process tests.
+- (Installer) The About control now opens a dropdown showing the installer version and a separate link to the AMAI website.
+- (Installer) Upgraded the build toolchain from Angular 16 to Angular 22 and Node.js 16 to Node.js 24 LTS, refreshed the supporting dependencies and lint configuration, and retained Electron 22.3.27 compatibility.
+- (Installer) Updated the Electron lint configuration to supported Angular ESLint presets and explicit application and end-to-end project coverage, and added lint, installer, unit, and end-to-end checks to pull-request CI.
+- (Installer) Replaced the default Electron executable, portable installer, and header branding with a panda-focused AMAI icon adapted from the project artwork.
+- (Installer) Rest of installer is now translated
+- (Installer) Added an option to disable AI chatting, plus remove Commander or all AMAI scripts from a map or directory.
+
+### Fixed
+
+- Lumber mills, towers and farms using special build locations now move to a surviving town after the starting town loses its hall, instead of continuing to build at the abandoned base.
+- Advancing armies now divert to nearby visible enemy troops only when local strength favors them, then resume their destination. Equal or stronger nearby enemies can trigger AMAI-controlled retreat before combat begins; authorized retreats and travel to defend towns take priority.
+- Zeppelins carrying army passengers are left to finish their transport instead of being reassigned to follow, rescue, or expansion pickup. Failed rescue pickups fall back to normal recovery after a minute, and recovery starts only after the passenger has unloaded. Overlapping rescues now keep their unloading state separate.
+- Expansion Zeppelins retain their reservation when unloading a worker fails, preventing follow or rescue orders from interrupting delivery retries.
+- Injured heroes now use healing items they already carry even when their usual recovery item differs or the carried item is not yet available to buy. Instant healing takes priority over regeneration.
+- Zeppelin rescues now order burrowed units to emerge and let them finish before attempting pickup.
+- Injured Night Elf units and heroes now approach their own nearest living moon well with enough mana and target it for healing, instead of sharing a destination that could redirect them to a distant or destroyed well.
+- Ward healers now return to the recovery location with injured units instead of trying to heal them beside the enemy. One healer stays to support recovering troops and heroes, casts when patients arrive, and rejoins the army when they are healthy enough. Nearby wards are reused, and recovery is abandoned if the location comes under attack.
+- Summoned units no longer influence counter-unit choices or strategy ratings, including ordinary troops raised by Animate Dead. They still count as combat threats using their level, even when absent from the unit tables.
+- Attack groups now respect explicit unit-table exclusions while continuing to include captured and custom attackers in ROC, TFT and Reforged.
+- Harassment can start again after a group is lost or finishes retreating. New groups select available units before applying unit limits, leave room for other requested types when troops are missing, and count their strength correctly when deciding whether to launch a distraction attack.
+- Safety checks added so that Neutral players no longer contribute player-wide strength or racial aggression, and attacks on neutral targets skip player-specific chat data. Creep strength remains based on the individual units without a player handicap.
+- Fixed critical issue so all races now use each strategy's intended selection weight, fixing mismatched preferences when choosing an opening or changing strategy.
+- Night Elf Ancient expansions now release stalled builders and entangling trees after two minutes without progress, with a short mine retry cooldown. Placement probes also stop when stuck, and camp checks skip construction and entangling phases.
+- Ancient expansion attacks now wait for completed Trees, bound army regrouping waits, and stop using old targets after cleanup. Mine-recovery attempts now prepare their site before starting construction.
+- Item and mercenary shopping now checks that the shop and buyer still exist before using their positions, checks threats around the selected buyer, and releases stale shopping reservations when buyers are lost.
+- Attack travel checks now preserve tracked army positions instead of destroying them. Retreat battle scans also skip units lost during scan waits.
+- Memory and optimization fixes.
+- Malformed chat conditions now stop at the end of the text or an unreadable character instead of potentially stalling AI chat processing.
+- Expansion construction now releases dead or stalled town builders even when mine eligibility or resource checks reject further requests. Early-game worker locality checks also preserve tracked expansion construction orders.
+- Ghouls returning home for lumber retry failed harvesting orders, leave the return list once harvesting starts, and wait for healing instead of interrupting it. Return lists now remove dead entries and stay compact during repeated updates.
+- Units sent home now wait for required ability research before trying to heal or hide, e.g preventing unresearched Cannibalize from leaving units stuck at graveyards.
+- Undead can haunt or rebuild a mine beside their own Necropolis without treating the hall as a competing expansion. Night Elf owned Entangled Gold Mines remain claimed, preventing duplicate Trees of Life and allowing later expansion targets to be considered.
+- Human and Orc harvesting now selects exposed neutral deposits and ignores dead mine claims, allowing released mines to be worked after Haunted or Entangled Gold Mine buildings are destroyed.
+- Obsidian Statues now follow nearby combat units that need health or mana instead of an old allied regroup point. Useful, safe statues stay still, statue-heavy armies no longer pull themselves backward, and positioning leaves retreats, spell casts and Destroyer transformations alone.
+- Injured heroes can still buy items while healing, but shopping completion, cancellation, or timeout no longer sends them back into battle before their healing job releases them.
+- Heroes sent home now keep healing after buying or receiving a healing item, and shopping movement and hero recovery checks cooperate with the healing job instead of interrupting it.
+- Human peasants no longer skip gold mining at game start while waiting for the first militia check. Only workers explicitly selected for defense or militia missions are reserved, so other peasants can keep mining even when they have Call to Arms.
+- Extra expansion workers are now trained early only for a requested expansion with a cleared mine, and expansion workers can start building without waiting for other workers to finish training.
+- Expansion construction no longer accumulates duplicate worker/mine checks resulting in mid/late game lag when 12 or more players involved, although could occur on smaller players in some cases.
+- Construction or transport attempts that make no progress for two minutes wait one minute before reconsideration. Old checks cannot reject a newer target, and build-position caching follows the selected mine and hall type.
+- Failed unloading no longer starts construction with a worker still aboard.
+- Duplicate expansion cleanup now keeps a consistent winning foundation instead of allowing unfinished allied or owned foundations to cancel each other.
+- Town threat checks now compare armies against the owner of the town being evaluated, avoiding missed threats when army and town lists have different ordering.
+- Current build requests now maintain missing prerequisites even when already satisfied or blocked by resources, with queue capacity checked under the build lock and transformation sources protected from overbuilding.
+- Staggered AI checks now use bounded random delays instead of repeatedly slowing higher player slots, while retaining AI-count performance throttling.
+- Harvest checks no longer redirect Undead acolytes restoring buildings or Night Elf wisps renewing buildings back to gold mining.
+- Campaign AI compatibility names for identical units now share their canonical AMAI unit metadata instead of creating duplicate unit records.
+- Attempts to open Commander using shortcuts or chat commands now explain when Commander is disabled for the game or the player has no allied computer to command.
+- Reworked and renabled multi-mine handling around individual mine claims, allowing all races to harvest or expand at clustered mines without blocking later expansions, including bounded per-worker gold rosters that avoid lumber-worker churn or militia defense control, a three-mine worker-production cap, hall-based harvesting that bypasses broken town bookkeeping, surplus Human/Orc-style mine handling, movable entangling halls, and configurable mine styles for custom races.
+- (internal) Long-running AI jobs now report their elapsed time correctly in diagnostic warnings.
+- (internal) The AI job queue now reserves space for heap swaps and checks capacity after acquiring its lock, preventing array overflow when the queue fills.
+- (Installer) The installation dialog now receives worker completion and enables Close after installation finishes.
+- (Installer) The Electron installer now terminates its full worker process tree when stopped, replaced, closed, or disconnected, without reporting late worker errors after its window has closed.
+- (Installer) Development mode now runs only the Electron window against the repository's root `MPQEditor.exe` and compiled `Scripts`, without requiring a production package layout or opening a non-functional browser copy.
 
 ## [3.7.0] - 2026-09-18
 

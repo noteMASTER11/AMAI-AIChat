@@ -4,6 +4,8 @@ Advanced Melee Artificial Intelligence Mod For Warcraft III.
 
 Created by **AIAndy**, **Zalamander** and the **Strategy Master**.
 
+Installation, Commander, customization, and development documentation is available in the [AMAI wiki](https://github.com/SMUnlimited/AMAI/wiki).
+
 Official Release Links available from https://www.hiveworkshop.com/threads/advanced-melee-ai.62879/.
 
 AMAI was originally hosted on http://www.wc3campaigns.net/forumdisplay.php?f=601.
@@ -33,7 +35,7 @@ Improvements and fixes to the core AI engine will improve the older scripts as w
 
 | AMAI Scripts      | Optimal Version | Supported Version      |
 | ----------------- | ------------------- | ------------------|
-| **REFORGED** | **3.0.0** | 3.0.0+ |
+| **REFORGED** | **3.0.0/3.0.1** | 3.0.0+ |
 | **TFT** | **1.24-1.28** | 1.24+ |
 | **ROC** | **1.24-1.28** | 1.24 - 1.31 |
 
@@ -63,6 +65,7 @@ Select if Commander is enabled, or if you want to have AMAI play against the van
 
 Use Optimised Scripts: Optimises the scripts to use less CPU and memory. On by default.
 Override Default AI Language: Sets the default chat language of AMAI to current language of the installer and disables initial game prompt of language in the Commander.
+Disable chatting: If you do not like AMAI chatting to you, this can be disabled.
 
 ![installer](installer.jpg)
 
@@ -344,7 +347,7 @@ If your custom map has custom units you will need to make custom changes to AMAI
 
 ## Custom AI
 
-AMAI has built in support to be able to write new strategies and profiles using the **Strategy Manager UI Client** . The `Manual` folder contains more details.
+AMAI has built in support to be able to write new strategies and profiles using the **Strategy Manager UI Client** . See the [AMAI wiki](https://github.com/SMUnlimited/AMAI/wiki)
 
 # Credits
 

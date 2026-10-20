@@ -1,0 +1,164 @@
+// Exercise production JASS control flow; Warcraft movement still needs an in-game check.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { compile, expression } from './jass.mjs';
+import { groupNatives } from './warcraft-natives.mjs';
+
+const root = new URL('../../', import.meta.url);
+
+export function heroGame(reservation, assigned = true) {
+  const hero = { alive: true, type: 'hero', x: 6000, y: 4000, order: 'move-home', slots: 1, life: 20, maxLife: 100, mana: 0 };
+  const effects = [];
+  const unitJobs = [];
+  const groupJobs = [];
+  const threatScans = [];
+  const validUnit = u => { assert.ok(u && !u.removed, 'Read coordinates of a missing or removed unit'); return u; };
+  const state = {
+    shop_sent: assigned ? hero : null, shop_ordered: true, retreat_home: false,
+    shop_buy_time_large: -1, shop_buy_time_small: -1, shop_distance_limit: 100000,
+    shop_unit: { alive: true, type: 'shop', x: 6100, y: 4000 }, shop_wanted: 1,
+    unit_buying_item: new Set(assigned ? [hero] : []),
+    unit_buying_tavern: new Set(), unit_buying_merc: new Set(),
+    unit_healing: new Set(), unit_rescueing: new Set(), unit_harassing: new Set(), unit_zepplin_move: new Set(),
+    healer_group: new Set(), ward_recovery_healer: null, ward_recovery_patients: new Set(),
+    hero_built: [false, true, false, false], hero_unit: [null, hero],
+    buy_type: [1, 0, 1], BT_RACIAL_ITEM: 1, BUY_ITEM: 20, old_id: ['item', 'shop', 'potion'], racial_shop: 1,
+    town_threatened: false, attack_running: true, isfleeing: false,
+    NEUTRAL_MERCHANT: 0, neutral_guarded: [false], neutral_night_buy: [false], nearest_neutral: [null],
+    UndeadMineRecoveryNeeded: () => false,
+    distance: 4000, now: 10, items: 0, ai_time: 10, regenerate_time: [20], available_time: [],
+    buy_timeout_large: 60, buy_timeout_small: 5, buy_distance: 300,
+    tq_timer: null, ai_player: 0, GAME_STATE_TIME_OF_DAY: 0, UNIT_TYPE_PEON: 'peon', UNIT_TYPE_STRUCTURE: 'structure',
+    home_location: {},
+    captain_home: {}, SEND_HOME: 40, RESET_GUARD_POSITION: 16,
+    UNIT_STATE_LIFE: 'life', UNIT_STATE_MAX_LIFE: 'maxLife', UNIT_STATE_MANA: 'mana',
+    UNIT_TYPE_HERO: 'hero', UNIT_TYPE_FLYING: 'flying', ITEMTYPE_CONTINUOUS: 1,
+    healingItems: 0, carriedItems: new Map(), usedItems: [], continuous: false, homeDistance: 0, purchaseSucceeds: false, otherhero: null,
+    GetUnitState: (u, property) => u[property], I2R: n => n, Max: Math.max,
+    GetHeroHealingItem: () => 2, GetHeroManaItem: () => 0,
+    SomeUnitHasHealingItem: () => state.otherhero,
+    GetUnitOfTypeNearUnit: () => state.shop_unit,
+    GetItemNumberOnUnit: (id, u) => id === 2 ? (u === hero ? state.healingItems : 1) : (u === hero ? state.carriedItems.get(id) ?? 0 : 0),
+    GetItemInstantType: () => state.continuous ? 1 : 0, GetItemHealingTime: () => state.continuous ? 9 : 0,
+    GetItemOfTypeOnUnit: id => ({ id }),
+    UnitUseItem: (u, item) => { effects.push('use'); state.usedItems.push(item.id); state.carriedItems.delete(item.id); state.healingItems = 0; },
+    UnitUseItemTarget() {}, UnitAddItem: () => { effects.push('transfer'); state.healingItems++; },
+    DistanceBetweenPoints_dk: () => state.homeDistance,
+    TQAddUnitJob: (delay, job, parameter, unit) => unitJobs.push({ delay, job, parameter, unit }),
+    TQAddGroupJob: (delay, job, parameter, unit, group) => groupJobs.push({ delay, job, parameter, unit, group }),
+    ZEPPELIN_MOVE: 'transport', ZTARGET_HOME: 0,
+    abilities: new Map(), upgrades: new Map(),
+    GetUnitAbilityLevel: (u, ability) => state.abilities.get(ability) ?? 0,
+    GetUpgradeLevel: upgrade => state.upgrades.get(upgrade) ?? 0,
+    UNIT_TYPE_DEAD: 'dead', UNIT_TYPE_TOWNHALL: 'townhall',
+    follow_zeppelin: null, ward_cast: false,
+    IsUnitInvisibleAM: () => false, Player: n => n, PLAYER_NEUTRAL_AGGRESSIVE: 12,
+    corpses: [],
+    GroupEnumUnitsInRangeOfLoc: group => state.corpses.forEach(unit => group.add(unit)),
+    ACTION_DO_NOTHING: 0, ACTION_GO_HOME: 1, ACTION_FOUNTAIN: 2, ACTION_TP: 3,
+    ACTION_ZEPPELIN_HOME: 4, ACTION_ZEPPELIN_FOUNTAIN: 5, ACTION_HEALER: 6,
+    ACTION_MANA_FOUNTAIN: 7, ACTION_MOONWELLS: 8, major_hero: null,
+    GetHealthFountainID: () => 0, GetManaFountainID: () => 0,
+    teleporting: false, MICRO_HERO: 23, sleep_multiplier: 1, flee_health_percentage: 0.25, flee_minimum_health: 10,
+    hero_dir: [], hero_loc: [], hero_hp_loss: [], hero_hp: [0, 0.2],
+    hero_enemy_density: [], hero_enemy_loc: [], hero_ally_density: [], hero_ally_loc: [],
+    hero_radius: 1000, enemy_density: 0, ally_density: 0, enemy_density_loc: {}, ally_density_loc: {},
+    town_loc: [{}], most_threatened_town: 0, tp_item: 3,
+    GetArmyOfUnit: () => -1, GetDensities() {}, MoveLocation() {}, RMax: Math.max,
+    UnitAlive: u => Boolean(u?.alive && !u.removed), GetUnitTypeId: u => u?.type,
+    IsUnitType: (u, type) => u.type === type, GetSlotsFreeOnUnit: u => u.slots,
+    ...groupNatives(),
+    GetUnitX: u => validUnit(u).x, GetUnitY: u => validUnit(u).y, GetLocationX: () => 0, GetLocationY: () => 0,
+    DistanceBetweenUnits(a, b) { validUnit(a); validUnit(b); return state.distance; },
+    GetLocationNonCreepStrength(x, y) { threatScans.push({ x, y }); return state.threat ?? 0; }, GetUnitStrength: () => 100,
+    GetFloatGameState: () => 12, TimerGetElapsed: () => state.now,
+    GetItemNumber: () => state.items, IsHealingItem: () => true,
+    GetUnitCurrentOrder: u => u.order, OrderId: s => s, GetUnitLoc: () => ({}),
+    DistanceBetweenPoints: () => 0, RemoveLocation() {},
+    DisplayToAllJobDebug() {}, CreateDebugTag() {}, Trace() {},
+    RecycleGuardPosition: () => effects.push('recycle'),
+    AddAssault: (count, type) => {
+      assert.equal(count, 1, 'Keep the original shopping assault count');
+      assert.equal(type, 'hero');
+      effects.push('assault');
+    },
+    RemoveGuardPosition: () => effects.push('remove-guard'),
+    IssuePointOrder: () => effects.push('move'), IssueImmediateOrder: () => effects.push('order'),
+    IssueNeutralImmediateOrderById: () => {
+      effects.push('buy');
+      if (state.purchaseSucceeds) state.healingItems++;
+    }, TQAddJob: () => effects.push('job'),
+    IssueTargetOrderById() {},
+    IssueTargetOrder: (u, order) => effects.push(order),
+  };
+  const abilityTech = readFileSync(new URL('REFORGED/AbilityTech.txt', root), 'utf8').trim().split(/\r?\n/).slice(1);
+  const units = readFileSync(new URL('REFORGED/StandardUnits.txt', root), 'utf8').trim().split(/\r?\n/)
+    .map(row => row.split('\t'));
+  const upgrades = new Map(units.map(([name, code]) => [name, code]));
+  const common = readFileSync(new URL('common.eai', root), 'utf8').replace(
+    /#INCLUDETABLE <\$VER\$\\AbilityTech.txt> #EFR[\s\S]*?#ENDINCLUDE/,
+    abilityTech.map(row => {
+      const [ability, upgrade, level] = row.split('\t');
+      return `if abil == '${ability}' and GetUpgradeLevel('${upgrades.get(upgrade)}') < ${level} then\nreturn 0\nendif`;
+    }).join('\n'),
+  );
+  if (reservation) state[reservation].add(hero);
+  const context = vm.createContext(state);
+  const healingRows = readFileSync(new URL('REFORGED/HealingItems.txt', root), 'utf8').trim().split(/\r?\n/).slice(1)
+    .map(row => row.split('\t'));
+  const healingIds = new Map(healingRows.map(([name], index) => [name, name === 'HEALING_POTION' ? 2 : 100 + index]));
+  const carriedHealing = common.match(/function GetCarriedHeroHealingItem[\s\S]*?endfunction/)[0].replace(
+    /#INCLUDETABLE[^\n]+"(SUDDEN|CONTINUOUS)"[^\n]*\r?\n([\s\S]*?)#ENDINCLUDE/g,
+    (_, speed, body) => healingRows.filter(([, , type, itemSpeed]) => itemSpeed === speed &&
+      ['HEALINGITEM_HERO', 'HEALINGITEM_SINGLE', 'HEALINGITEM_MASS', 'MERCHANTITEM_MASS'].includes(type))
+      .map(([name]) => body.replaceAll('u%1', healingIds.get(name))).join('\n'),
+  );
+  vm.runInContext(compile(carriedHealing, 'GetCarriedHeroHealingItem'), context);
+  vm.runInContext(compile(common, 'GetUnitUsableAbilityLevel'), context);
+  for (const [file, name] of [
+    ['common.eai', 'IsStandardUnit'], ['common.eai', 'IsUnitBuying'], ['common.eai', 'GetHeroToBuyItem'],
+    ['common.eai', 'RequestWardRecovery'],
+    ['Jobs/BUY_ITEM.eai', 'EndBuyItemJob'], ['Jobs/BUY_ITEM.eai', 'BuyItemJob'],
+    ['Jobs/RESET_GUARD_POSITION.eai', 'ResetGuardPositionJob'],
+    ['Jobs/SEND_HOME.eai', 'SendHomeMoveUnitToLoc'], ['Jobs/SEND_HOME.eai', 'SendUnitHomeJob'],
+    ['Jobs/MICRO_HERO.eai', 'ExecuteSaveHero'], ['Jobs/MICRO_HERO.eai', 'HeroBugFixHealthCheck'],
+    ['Jobs/MICRO_HERO.eai', 'MicroHeroJob'],
+  ]) vm.runInContext(compile(readFileSync(new URL(file, root), 'utf8'), name), context);
+  return {
+    state, hero, effects, unitJobs, groupJobs, threatScans,
+    buyItem: () => state.BuyItemJob(2),
+    sendHome: () => state.SendUnitHomeJob(hero, 0),
+    carryItem: name => name === 'HEALING_POTION' ? state.healingItems++ : state.carriedItems.set(healingIds.get(name), 1),
+    healingItemId: name => healingIds.get(name),
+    giveAbility: (code, level = 1) => state.abilities.set(Number(expression(`'${code}'`)), level),
+    research: (code, level = 1) => state.upgrades.set(Number(expression(`'${code}'`)), level),
+    abilityLevel: code => state.GetUnitUsableAbilityLevel(hero, Number(expression(`'${code}'`))),
+    saveHero: () => state.ExecuteSaveHero(1, state.ACTION_GO_HOME, null),
+    checkHero: () => state.MicroHeroJob(1),
+  };
+}
+
+export function neutralGame() {
+  const game = heroGame(undefined, false);
+  const { state, hero } = game;
+  Object.assign(state, {
+    nearest_neutral: [state.shop_unit], neutral_guarded: [false], neutral_sent: [null],
+    neutral_ordered: [true], neutral_wanted: [1], buy_time_large: [-1], buy_time_small: [-1],
+    retreat_home_n: false, BUY_NEUTRAL: 21, neutralCount: 0,
+    GetNeutralNumber: () => 0, TownCountDone: () => state.neutralCount,
+    GroupEnumUnitsOfPlayer: g => { if (hero.alive && !hero.removed) g.add(hero); },
+    IsUnitLoaded: () => false, IsUnitIllusion: () => false, UNIT_TYPE_SUMMONED: 'summoned',
+    GetExpansionPeon: () => null, GetExpansionPeon2: () => null,
+    GetTimeToReachUnit: () => 1,
+  });
+  const context = vm.createContext(state);
+  for (const name of ['SelectByUnitStandard', 'GetUnitToBuy']) {
+    vm.runInContext(compile(readFileSync(new URL('common.eai', root), 'utf8'), name), context);
+  }
+  const source = readFileSync(new URL('Jobs/BUY_NEUTRAL.eai', root), 'utf8');
+  vm.runInContext(compile(source, 'EndBuyNeutralJob'), context);
+  vm.runInContext(compile(source, 'BuyNeutral'), context);
+  return { ...game, buyNeutral: () => state.BuyNeutral(2) };
+}
+

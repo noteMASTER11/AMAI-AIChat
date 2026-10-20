@@ -1,6 +1,8 @@
 {
   "PAGES": {
     "HOME": {
+      "OPTIMAL": "最佳版本：",
+      "DESTINATION": "安装目标",
       "TITLE": "AMAI 安装器",
       "CHOOSE_GAME_VERSION": "选择游戏版本",
       "ADVANCED_SETTING": "高级设置",
@@ -10,17 +12,52 @@
       "INCLUDE_COMMANDER_VSAI": "AMAI VS 暴雪AI",
       "INCLUDE_COMMANDER_OFF": "不安装控制台",
       "OPTIMISE": "使用优化脚本", 
-      "FORCELANG": "覆盖AI聊天语言" 
+      "FORCELANG": "覆盖 AI 聊天语言",
+      "DISABLE_CHAT": "禁用 AI 聊天",
+      "UNINSTALL_COMMANDER": "卸载控制台",
+      "UNINSTALL_ALL": "全部卸载"
     },
     "APP": {
-      "INSTALLING": "正在安装 {{path}}",
-      "INSTALLING_DIR": "安装到文件夹: {{path}}",
-      "INSTALLING_DONE": "安装完成"
+      "INSTALL_FAILED": "安装失败",
+      "LOG": "安装日志",
+      "CLOSE": "关闭",
+      "INSTALLING": "正在安装：{{path}}",
+      "INSTALLING_DIR": "正在安装到文件夹: {{path}}",
+      "INSTALL_DONE": "安装完成",
+      "UNINSTALLING": "正在卸载：{{path}} ",
+      "UNINSTALLING_DIR": "正在卸载，文件夹：{{path}}",
+      "UNINSTALL_DONE": "卸载完成",
+      "INSTALL_LOG": {
+        "MISSING_FILES": "错误：找不到安装程序所需文件：\n{{files}}",
+        "START": "正在安装 AMAI {{version}}；控制台：{{commander}}；AI 语言：{{language}}",
+        "MAP_START": "正在安装 AMAI {{version}} ：{{file}}",
+        "NO_WRITE_PERMISSION": "{{file}} 不可写入，无法安装",
+        "PERMISSION_FAILURE": "{{file}}：{{operation}} 操作失败。请检查文件权限和 Windows UAC，并确保地图不在受保护的位置",
+        "UNKNOWN_FAILURE": "{{file}}：{{operation}} 可能操作失败，状态码：{{status}}",
+        "SYSTEM_ERROR": "系统错误：{{detail}}",
+        "RESIZE_SUCCESS": "已调整地图哈希表大小：{{file}}",
+        "AI_SUCCESS": "已添加 AMAI 脚本：{{file}}",
+        "VSAI_SUCCESS": "已添加 VS 暴雪AI 脚本：{{file}}",
+        "COMMANDER_SUCCESS": "已添加控制台：{{file}}",
+        "VSAI_COMMANDER_SUCCESS": "已添加 VS 暴雪AI 脚本 及 控制台：{{file}}",
+        "OPTIMIZE_SUCCESS": "已优化地图 MPQ：{{file}}",
+        "INSTALL_FAILURE": "安装失败：{{error}}",
+        "CHAT_SETTING_FAILURE": "无法配置 AI 聊天：{{error}}",
+        "UNINSTALL_START": "正在卸载第 {{count}} 张地图的 AMAI 文件",
+        "UNINSTALL_MAP_START": "正在卸载：{{file}}",
+        "COMMANDER_REMOVED": "已卸载控制台：{{file}}",
+        "ALL_REMOVED": "已移除所有 AMAI 文件：{{file}}"
+      }
     },
     "ELECTRON": {
       "OPEN_MAP": "选择地图",
-      "OPEN_DIR": "选择地图目录",
-      "MAPFILE": "'地图文件'"
+      "OPEN_DIR": "选择地图文件夹",
+      "MAPFILE": "'地图文件'",
+      "CONFIRM_TITLE": "确认卸载",
+      "CONFIRM_UNINSTALL_COMMANDER": "从所有选定地图中移除控制台？",
+      "CONFIRM_UNINSTALL_ALL": "从所有选定地图中移除全部 AMAI 脚本和控制台？",
+      "CANCEL": "取消",
+      "UNINSTALL": "卸载"
     },    
     "MENU": {
       "SELECT_LANG": "选择语言",

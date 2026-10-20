@@ -1,6 +1,19 @@
 import { BrowserContext, ElectronApplication, Page, _electron as electron } from 'playwright';
 import { test, expect } from '@playwright/test';
-const PATH = require('path');
+import axe from 'axe-core';
+import * as path from 'path';
+
+delete process.env.ELECTRON_RUN_AS_NODE;
+process.env.AMAI_E2E = 'true';
+
+const expectNoAccessibilityViolations = async (page: Page, state: string): Promise<void> => {
+  if (!await page.evaluate(() => 'axe' in window)) await page.addScriptTag({ content: axe.source });
+  const results = await page.evaluate(() =>
+    (window as typeof window & { axe: typeof axe }).axe.run()
+  );
+
+  expect(results.violations, `${state}: ${JSON.stringify(results.violations, null, 2)}`).toEqual([]);
+};
 
 test.describe('Check Home Page', async () => {
   let app: ElectronApplication;
@@ -8,7 +21,9 @@ test.describe('Check Home Page', async () => {
   let context: BrowserContext;
 
   test.beforeAll( async () => {
-    app = await electron.launch({ args: [PATH.join(__dirname, '../app/main.js'), PATH.join(__dirname, '../app/package.json')] });
+    app = await electron.launch({
+      args: ['--no-sandbox', path.join(__dirname, '../app/main.js'), path.join(__dirname, '../app/package.json')]
+    });
     context = app.context();
     await context.tracing.start({ screenshots: true, snapshots: true });
     firstWindow = await app.firstWindow();
@@ -47,9 +62,109 @@ test.describe('Check Home Page', async () => {
   // });
 
   test('Check title', async () => {
-    const elem = await firstWindow.$('app-home h1');
+    const elem = await firstWindow.$('.app-header h1');
     const text = await elem.innerText();
-    expect(text).toBe('App works !');
+    expect(text).toBe('AMAI Installer');
+  });
+
+  test('Has no automatically detectable accessibility violations on every page', async () => {
+    await expect(firstWindow.locator('#install-button')).toBeVisible();
+    await expect(firstWindow.locator('#uninstall-commander-button')).toBeVisible();
+    await expect(firstWindow.locator('#uninstall-all-button')).toBeVisible();
+    await expectNoAccessibilityViolations(firstWindow, 'Home page');
+
+    await firstWindow.locator('.about-menu summary').click();
+    await expectNoAccessibilityViolations(firstWindow, 'Open About menu');
+    await firstWindow.locator('.about-menu summary').click();
+
+    await firstWindow.evaluate(() => {
+      history.pushState(null, '', 'detail');
+      dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(firstWindow.locator('app-detail')).toBeVisible();
+    await expectNoAccessibilityViolations(firstWindow, 'Detail page');
+
+    await firstWindow.evaluate(() => {
+      history.pushState(null, '', 'missing-page');
+      dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(firstWindow.locator('app-page-not-found')).toBeVisible();
+    await expectNoAccessibilityViolations(firstWindow, 'Not-found page');
+
+    await firstWindow.evaluate(() => {
+      history.pushState(null, '', 'home');
+      dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(firstWindow.locator('#install-button')).toBeVisible();
+  });
+
+  test('Show the modern installer defaults without a native menu', async () => {
+    await expect.poll(() => firstWindow.locator('#install-button').evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.bottom <= window.innerHeight;
+    })).toBeTruthy();
+
+    const state = await app.evaluate((process) => {
+      const mainWindow = process.BrowserWindow.getAllWindows()[0];
+      const bounds = mainWindow.getBounds();
+      return {
+        menu: process.Menu.getApplicationMenu(),
+        bounds,
+        workArea: process.screen.getDisplayMatching(bounds).workArea
+      };
+    });
+
+    await expect(firstWindow.locator('#edition-REFORGED')).toBeChecked();
+    await expect(firstWindow.locator('#install-folder')).toBeChecked();
+    await expect(firstWindow.locator('#commander-on')).toBeChecked();
+    await expect(firstWindow.locator('#optimise')).toBeChecked();
+    await expect(firstWindow.locator('#install-button')).toBeVisible();
+    expect(state.menu).toBeNull();
+    expect(state.bounds.width).toBeLessThanOrEqual(state.workArea.width);
+    expect(state.bounds.height).toBeLessThanOrEqual(state.workArea.height);
+    expect((await firstWindow.screenshot()).length).toBeGreaterThan(1000);
+  });
+
+  test('Support keyboard edition selection and the minimum window size', async () => {
+    await firstWindow.locator('#edition-REFORGED').focus();
+    await firstWindow.keyboard.press('ArrowRight');
+    await expect(firstWindow.locator('#edition-TFT')).toBeChecked();
+
+    await app.evaluate((process) => process.BrowserWindow.getAllWindows()[0].setSize(900, 650));
+    await firstWindow.waitForTimeout(150);
+    const hasHorizontalOverflow = await firstWindow.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(hasHorizontalOverflow).toBeFalsy();
+    expect((await firstWindow.screenshot()).length).toBeGreaterThan(1000);
+    await app.evaluate((process) => process.BrowserWindow.getAllWindows()[0].setSize(1200, 820));
+    await expect.poll(() => firstWindow.locator('#install-button').evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+    })).toBeTruthy();
+  });
+
+  test('Show determinate installation progress and completion', async () => {
+    await app.evaluate((process) => {
+      const window = process.BrowserWindow.getAllWindows()[0];
+      window.webContents.send('on-install-init', { response: 'C:\\Maps', commander: 1, isMap: false });
+      window.webContents.send('on-install-progress', { current: 2, total: 4 });
+      window.webContents.send('on-install-message', 'Installing test map');
+    });
+
+    await expect(firstWindow.locator('.install-modal')).toBeVisible();
+    await expectNoAccessibilityViolations(firstWindow, 'Installation dialog');
+    await expect(firstWindow.locator('.modal-status .status-icon')).toHaveText('sync');
+    const statusTitle = await firstWindow.locator('#install-status-title').boundingBox();
+    expect(statusTitle).not.toBeNull();
+    if (!statusTitle) throw new Error('Installation status title has no layout box');
+    expect(statusTitle.width).toBeGreaterThan(300);
+    await expect(firstWindow.locator('[role="progressbar"]')).toHaveAttribute('aria-valuenow', '50');
+    await expect(firstWindow.locator('.log-area')).toContainText('Installing test map');
+    await expect(firstWindow.locator('.secondary-button')).toBeDisabled();
+
+    await app.evaluate((process) => process.BrowserWindow.getAllWindows()[0].webContents.send('on-install-exit'));
+    await expect(firstWindow.locator('.secondary-button')).toBeEnabled();
+    await firstWindow.locator('.secondary-button').click();
+    await expect(firstWindow.locator('.install-modal')).toBeHidden();
   });
 
   test.afterAll( async () => {

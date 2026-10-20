@@ -1,4 +1,5 @@
 Variable Setting	Value	Comment
+stop_creeping_after_level_5	false	Stop idle creeping when all trained heroes are level 5 or higher; expansion clearing is unchanged.
 sleep_multiplier	1	increases performance by checking stuff not so often
 slm_start	4	how many computer players is needed tor the sleep multiplier to start increasing.
 slm_end	10	how many computer players is needed tor the sleep multiplier to stop increasing.
@@ -6,8 +7,12 @@ slm_start_mult	1	how much is the sleep multiplied when it's below the slm_start 
 slm_end_mult	2	how much is the sleep multiplied when it's above the slm_end condition
 hero_radius	200	scanning this small area around hero to detect if the hero gets surrounded by enemy or is in danger of becoming that so it should move
 use_linear_upkeep_saving	false	should the computers save the upkeep threshold gold over the time above or save it all at once when it get's to the upkeep border?
-repair_threshold	6	computers only repair buildings if they have more than this many workers
-repair_threshold_threatened	8	computers only repair buildings when the town is under attack if they got more than this many workers
+repair_threshold	6	minimum completed repair workers, adjusted for the race economy
+repair_threshold_threatened	3	minimum completed repair workers under threat, adjusted for the race economy
+repair_gold_threshold	150	available gold required to enable normal repairs
+repair_wood_threshold	75	available lumber required to enable normal repairs
+repair_gold_threshold_threatened	50	gold required to enable emergency repairs
+repair_wood_threshold_threatened	20	lumber required to enable emergency repairs
 max_follow_dist	1000	Distance behind the arme a zeppelin follows
 neutral_hero_time	25	when is neutral heroes available in seconds /5
 buy_distance	350	how close to a shop do a unit have to be for buying?
@@ -66,9 +71,7 @@ normal_battle_radius	1500	units within that radius are considered belonging to t
 creep_battle_radius	750	same as with normal_battle_radius, but for battles against creeps
 expansion_taken_radius	1300	how near a mine a enemy building must be to make amai recognize it as taken
 ver_strat_change_enemy_strength_min	25	don't allow strategy change unless the maximum strength of all enemy players in the game is above this.
-ver_hero_base_value	2	what is the base strength of a hero (the level number is added to get the actual strength) ?
-ver_hero_ultimate_level	6	at what level do the heroes get their ultimates ?
-ver_hero_ultimate_value	3	how much extra strength does the ultimate give to the hero ?
+ver_hero_base_value	2	Hero strength before level growth and learned ability bonuses.
 ver_creeps_attack_buildings_dist	1500	how far away do creeps attack buildings ?
 ver_mercs_night_buy	false	can mercs be bought at night without waking up creeps ?
 ver_tower_check_radius	2000	check for towers in this radius around a target

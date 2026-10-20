@@ -1,12 +1,11 @@
-import { TestBed } from '@angular/core/testing';
-
 import { ElectronService } from './electron.service';
 
 describe('ElectronService', () => {
-  beforeEach(() => TestBed.configureTestingModule({}));
-
-  it('should be created', () => {
-    const service: ElectronService = TestBed.get(ElectronService);
-    expect(service).toBeTruthy();
+  it('should detect the Electron renderer', () => {
+    const process = window.process;
+    Object.defineProperty(window, 'process', { configurable: true, value: { ...process, type: 'renderer' } });
+    const service = Object.create(ElectronService.prototype) as ElectronService;
+    expect(service.isElectron).toBe(true);
+    Object.defineProperty(window, 'process', { configurable: true, value: process });
   });
 });

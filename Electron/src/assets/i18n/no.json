@@ -1,6 +1,8 @@
 {
     "PAGES": {
       "HOME": {
+          "OPTIMAL": "Optimalt:",
+          "DESTINATION": "Mål",
         "TITLE": "AMAI Installer",
         "CHOOSE_GAME_VERSION": "Velg spillversjon",
         "ADVANCED_SETTING": "Avanserte innstillinger",
@@ -10,17 +12,52 @@
         "INCLUDE_COMMANDER_VSAI": "Mot Vanilla AI", 
         "INCLUDE_COMMANDER_OFF": "Ingen Kommandant",
         "OPTIMISE": "Bruk optimaliserte skript", 
-        "FORCELANG": "Overskriv AI-samtalespråk"
+        "FORCELANG": "Overskriv AI-samtalespråk",
+        "DISABLE_CHAT": "Deaktiver AI-chat",
+        "UNINSTALL_COMMANDER": "Avinstaller kommandør",
+        "UNINSTALL_ALL": "Avinstaller alt"
       },
       "APP": {
+        "INSTALL_FAILED": "Installasjonen mislyktes",
+        "LOG": "Installasjonslogg",
+        "CLOSE": "Lukk",
         "INSTALLING": "Installerer i {{path}}",
         "INSTALLING_DIR": "Installerer i katalog: {{path}}",
-        "INSTALL_DONE": "Installasjon fullført"
+        "INSTALL_DONE": "Installasjon fullført",
+        "UNINSTALLING": "Avinstallerer fra {{path}}",
+        "UNINSTALLING_DIR": "Avinstallerer fra katalog: {{path}}",
+        "UNINSTALL_DONE": "Avinstallasjon fullført",
+        "INSTALL_LOG": {
+          "MISSING_FILES": "FEIL: Nødvendige installasjonsfiler ble ikke funnet:\n{{files}}",
+          "START": "Installerer AMAI {{version}}; kommandant: {{commander}}; AI-språk: {{language}}",
+          "MAP_START": "Installerer {{version}} i: {{file}}",
+          "NO_WRITE_PERMISSION": "{{file}} er ikke skrivbar og kunne ikke installeres",
+          "PERMISSION_FAILURE": "{{file}}: {{operation}} mislyktes. Kontroller filtillatelser og Windows UAC, og sørg for at kartet ikke ligger på en beskyttet plassering",
+          "UNKNOWN_FAILURE": "{{file}}: {{operation}} kan ha mislyktes med status {{status}}",
+          "SYSTEM_ERROR": "Systemfeil: {{detail}}",
+          "RESIZE_SUCCESS": "Endret størrelsen på kartets hashtabell: {{file}}",
+          "AI_SUCCESS": "La til AI-skript: {{file}}",
+          "VSAI_SUCCESS": "La til VS Vanilla AI-skript: {{file}}",
+          "COMMANDER_SUCCESS": "La til kommandant: {{file}}",
+          "VSAI_COMMANDER_SUCCESS": "La til VS Vanilla AI-kommandant: {{file}}",
+          "OPTIMIZE_SUCCESS": "Optimaliserte kart-MPQ: {{file}}",
+          "INSTALL_FAILURE": "Installasjonen mislyktes: {{error}}",
+          "CHAT_SETTING_FAILURE": "Kunne ikke konfigurere AI-chat: {{error}}",
+          "UNINSTALL_START": "Avinstallerer AMAI-filer fra {{count}} kart",
+          "UNINSTALL_MAP_START": "Avinstallerer fra: {{file}}",
+          "COMMANDER_REMOVED": "Kommandør fjernet: {{file}}",
+          "ALL_REMOVED": "Alle AMAI-filer fjernet: {{file}}"
+        }
       },
       "ELECTRON": {
         "OPEN_MAP": "Åpne WC3-kartfil",
         "OPEN_DIR": "Åpne AMAI-kartkatalog",
-        "MAPFILE": "WC3-kartfil"
+        "MAPFILE": "WC3-kartfil",
+        "CONFIRM_TITLE": "Bekreft avinstallasjon",
+        "CONFIRM_UNINSTALL_COMMANDER": "Fjerne kommandøren fra alle valgte kart?",
+        "CONFIRM_UNINSTALL_ALL": "Fjerne alle AMAI-skript og kommandøren fra alle valgte kart?",
+        "CANCEL": "Avbryt",
+        "UNINSTALL": "Avinstaller"
       },
       "MENU": {
         "SELECT_LANG": "Velg språk",

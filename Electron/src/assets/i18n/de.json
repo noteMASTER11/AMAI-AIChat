@@ -1,6 +1,8 @@
 {
     "PAGES": {
       "HOME": {
+          "OPTIMAL": "Optimal:",
+          "DESTINATION": "Installationsziel",
         "TITLE": "AMAI-Installationsprogramm",
         "CHOOSE_GAME_VERSION": "Spielversion wählen",
         "ADVANCED_SETTING": "Erweiterte Einstellungen",
@@ -10,17 +12,52 @@
         "INCLUDE_COMMANDER_VSAI": "Gegen Vanilla KI", 
         "INCLUDE_COMMANDER_OFF": "Kein Kommandant",
         "OPTIMISE": "Optimierte Skripte verwenden", 
-        "FORCELANG": "AI Chat Sprache überschreiben"
+        "FORCELANG": "AI Chat Sprache überschreiben",
+        "DISABLE_CHAT": "KI-Chat deaktivieren",
+        "UNINSTALL_COMMANDER": "Kommandant deinstallieren",
+        "UNINSTALL_ALL": "Alles deinstallieren"
       },
       "APP": {
+        "INSTALL_FAILED": "Installation fehlgeschlagen",
+        "LOG": "Installationsprotokoll",
+        "CLOSE": "Schließen",
         "INSTALLING": "Installation in {{path}}",
         "INSTALLING_DIR": "Installation im Verzeichnis: {{path}}",
-        "INSTALL_DONE": "Installation abgeschlossen"
+        "INSTALL_DONE": "Installation abgeschlossen",
+        "UNINSTALLING": "Deinstallation aus {{path}}",
+        "UNINSTALLING_DIR": "Deinstallation aus Verzeichnis: {{path}}",
+        "UNINSTALL_DONE": "Deinstallation abgeschlossen",
+        "INSTALL_LOG": {
+          "MISSING_FILES": "FEHLER: Erforderliche Installationsdateien wurden nicht gefunden:\n{{files}}",
+          "START": "AMAI {{version}} wird installiert; Kommandant: {{commander}}; KI-Sprache: {{language}}",
+          "MAP_START": "{{version}} wird installiert in: {{file}}",
+          "NO_WRITE_PERMISSION": "{{file}} ist nicht beschreibbar und konnte nicht installiert werden",
+          "PERMISSION_FAILURE": "{{file}}: {{operation}} ist fehlgeschlagen. Prüfen Sie Dateiberechtigungen und Windows-UAC und stellen Sie sicher, dass sich die Karte nicht an einem geschützten Ort befindet",
+          "UNKNOWN_FAILURE": "{{file}}: {{operation}} ist möglicherweise mit Status {{status}} fehlgeschlagen",
+          "SYSTEM_ERROR": "Systemfehler: {{detail}}",
+          "RESIZE_SUCCESS": "Kartentabelle vergrößert: {{file}}",
+          "AI_SUCCESS": "KI-Skripte hinzugefügt: {{file}}",
+          "VSAI_SUCCESS": "VS-Vanilla-KI-Skripte hinzugefügt: {{file}}",
+          "COMMANDER_SUCCESS": "Kommandant hinzugefügt: {{file}}",
+          "VSAI_COMMANDER_SUCCESS": "VS-Vanilla-KI-Kommandant hinzugefügt: {{file}}",
+          "OPTIMIZE_SUCCESS": "Karten-MPQ optimiert: {{file}}",
+          "INSTALL_FAILURE": "Installation fehlgeschlagen: {{error}}",
+          "CHAT_SETTING_FAILURE": "KI-Chat konnte nicht konfiguriert werden: {{error}}",
+          "UNINSTALL_START": "AMAI-Dateien werden aus {{count}} Karte(n) entfernt",
+          "UNINSTALL_MAP_START": "Deinstallation aus: {{file}}",
+          "COMMANDER_REMOVED": "Kommandant entfernt: {{file}}",
+          "ALL_REMOVED": "Alle AMAI-Dateien entfernt: {{file}}"
+        }
       },
       "ELECTRON": {
         "OPEN_MAP": "WC3-Kartendatei öffnen",
         "OPEN_DIR": "AMAI-Kartenverzeichnis öffnen",
-        "MAPFILE": "WC3-Kartendatei"
+        "MAPFILE": "WC3-Kartendatei",
+        "CONFIRM_TITLE": "Deinstallation bestätigen",
+        "CONFIRM_UNINSTALL_COMMANDER": "Kommandant aus allen ausgewählten Karten entfernen?",
+        "CONFIRM_UNINSTALL_ALL": "Alle AMAI-Skripte und den Kommandanten aus allen ausgewählten Karten entfernen?",
+        "CANCEL": "Abbrechen",
+        "UNINSTALL": "Deinstallieren"
       },
       "MENU": {
         "SELECT_LANG": "Sprache auswählen",
