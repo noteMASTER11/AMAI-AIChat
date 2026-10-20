@@ -50,6 +50,14 @@ test('structured output is bounded and tied to its event', () => {
   assert.throws(() => validateAnswer('{"event":3,"text":"ложь","silent":false}', 2));
   assert.throws(() => validateAnswer('{"event":2,"text":42,"silent":false}', 2));
 });
+test('new reply channels and structured assessments reject invalid targets', () => {
+  assert.match(makeReply('123456789', 2, 1, 'текст', 20, 5, { channel: 'team', recipient: 2 }), /\|team\|2/);
+  assert.throws(() => makeReply('123456789', 2, 1, 'текст', 20, 5, { channel: 'team', recipient: -1 }));
+  const answer = { event: 2, text: 'реснись, прикрою', silent: false, recipient: 2, valence: -0.6, relationshipTarget: 2, relationshipDelta: 0.04 };
+  assert.equal(validateAnswer(JSON.stringify(answer), 2, [2]).valence, -0.6);
+  assert.throws(() => validateAnswer(JSON.stringify({ ...answer, recipient: 3 }), 2, [2]));
+  assert.throws(() => validateAnswer(JSON.stringify({ ...answer, valence: 2 }), 2, [2]));
+});
 
 const options = { globalCooldownMs: 8000, botCooldownMs: 20000, eventTtlMs: 20000, chatTtlMs: 45000 };
 const event = (seq, kind = 'death', bot = 1) => ({ session: '123456789', seq, kind, bot, time: 10, text: 'тест' });

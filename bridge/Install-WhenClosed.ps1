@@ -11,5 +11,5 @@ try {
     Write-Deployment 'waiting' 'Новая сборка будет установлена сразу после выхода из Warcraft III.'
     while ($games = @(Get-Process -Name 'Warcraft III' -ErrorAction SilentlyContinue)) { $games | Wait-Process }
     & (Join-Path $PSScriptRoot 'Install.ps1')
-    Write-Deployment 'installed' 'Глобальные common.ai и Blizzard.j заменены; исходные файлы сохранены для отката. Следующий матч — проверка телеметрии.'
+    Write-Deployment 'installed' 'Глобальные скрипты AMAI и четыре расовых AI заменены; исходные файлы сохранены для отката. Следующий матч — проверка телеметрии.'
 } catch { Write-Deployment 'failed' $_.Exception.Message; throw }

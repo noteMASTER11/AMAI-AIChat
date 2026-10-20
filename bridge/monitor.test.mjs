@@ -64,6 +64,12 @@ test('localhost API follows real JSONL appends, holds partial lines, and rejects
     assert.equal((await fetch(base + '/api/snapshot', { method: 'POST' })).status, 405);
     assert.equal((await fetch(base + '/%2e%2e%2fconfig.json')).status, 403);
     const page = await fetch(base + '/'); assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+    const requestId = '12345678-1234-1234-1234-123456789012';
+    const chunkRoot = path.join(root, 'chunks'); await mkdir(chunkRoot);
+    const chunkFile = path.join(chunkRoot, 'event.txt'); await writeFile(chunkFile, 'current event: inventory');
+    monitor.store.ingest({ at, kind: 'model-request', data: { requestId, chunkFile } });
+    assert.equal(await (await fetch(base + '/api/chunk/' + requestId)).text(), 'current event: inventory');
+    assert.equal((await fetch(base + '/api/chunk/not-a-request')).status, 400);
   } finally {
     await monitor.close();
     assert.ok(path.resolve(root).toLowerCase().startsWith(path.resolve('D:/ChatGPT/Temp/amai-monitor-test-').toLowerCase()));

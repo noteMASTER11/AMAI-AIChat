@@ -82,6 +82,21 @@ export async function createMonitor({ runtime, dist = path.join(here, '../dashbo
     if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return fail(403, 'Origin mismatch');
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname === '/api/health') { res.writeHead(200, { ...headers, 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ app: 'amai-flight-recorder', pid: process.pid })); }
+    if (url.pathname.startsWith('/api/chunk/')) {
+      const requestId = url.pathname.slice('/api/chunk/'.length);
+      if (!/^[a-f0-9-]{36}$/.test(requestId)) return fail(400, 'Invalid request ID');
+      const record = store.records.find(r => r.kind === 'model-request' && r.data?.requestId === requestId);
+      if (!record?.data?.chunkFile) return fail(404, 'Chunk not captured');
+      const root = path.resolve(runtime, 'chunks');
+      const filename = path.resolve(record.data.chunkFile);
+      const relative = path.relative(root, filename);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) return fail(403, 'Invalid chunk path');
+      try {
+        if ((await stat(filename)).size > 262144) return fail(413, 'Chunk too large');
+        const body = await readFile(filename, 'utf8');
+        res.writeHead(200, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(body);
+      } catch { return fail(404, 'Chunk unavailable'); }
+    }
     if (url.pathname === '/api/snapshot' || url.pathname === '/api/export') {
       res.writeHead(200, { ...headers, 'Content-Type': 'application/json; charset=utf-8', ...(url.pathname.endsWith('export') ? { 'Content-Disposition': 'attachment; filename="amai-flight-recorder.json"' } : {}) });
       return res.end(JSON.stringify({ ...snapshot(), records: store.records, exportedAt: new Date().toISOString() }));

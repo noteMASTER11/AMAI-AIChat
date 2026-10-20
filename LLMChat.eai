@@ -471,7 +471,7 @@ function LLMOnHero takes nothing returns nothing
         exitwhen i >= GetBJMaxPlayers()
         if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
             if owner == i or k == i or IsUnitVisible(u, Player(i)) or (IsPlayerAlly(Player(i), Player(owner)) and IsPlayerAlly(Player(owner), Player(i))) then
-                call LLMRecord(kind, i, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, k, GetHeroProperName(u), "")
+                call LLMRecord(kind, i, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, k, GetHeroProperName(u), "unit=" + I2S(GetHandleId(u)) + ";x=" + R2S(GetUnitX(u)) + ";y=" + R2S(GetUnitY(u)))
             endif
         endif
         set i = i + 1

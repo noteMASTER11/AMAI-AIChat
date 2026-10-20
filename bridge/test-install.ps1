@@ -9,16 +9,19 @@ $previousRuntime = $env:AMAI_RUNTIME
 New-Item -ItemType Directory -Path $scripts,$verification -Force | Out-Null
 $env:AMAI_RUNTIME = $verification
 @{ method = 'observed-game-ack'; session = '123456789'; seq = 2; game = '3.0.1' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $verification 'transport-verified.json')
-foreach ($name in @('common.ai','Blizzard.j')) { Set-Content -LiteralPath (Join-Path $scripts $name) -Value ('original-' + $name) }
+foreach ($name in @('common.ai','Blizzard.j','human.ai','orc.ai','elf.ai','undead.ai')) { Set-Content -LiteralPath (Join-Path $scripts $name) -Value ('original-' + $name) }
 $original = (Get-FileHash -LiteralPath (Join-Path $scripts 'common.ai')).Hash
+$originals = @{}; foreach ($name in @('common.ai','Blizzard.j','human.ai','orc.ai','elf.ai','undead.ai')) { $originals[$name] = (Get-FileHash -LiteralPath (Join-Path $scripts $name)).Hash }
 # External process inventory is the only mocked boundary. All copies, hashes,
 # manifests, refusal and restore logic use real files in this isolated fixture.
 function Get-Process { param($Name,$ErrorAction) return @() }
 try {
     & (Join-Path $PSScriptRoot 'Install.ps1') -GamePath $game -StateDirectory $state
+    foreach ($name in $originals.Keys) { if ((Get-FileHash -LiteralPath (Join-Path $scripts $name)).Hash -ne (Get-FileHash -LiteralPath (Join-Path $repo ('Scripts\REFORGED\' + $name))).Hash) { throw "Wrong installed script: $name" } }
     if ((Get-FileHash -LiteralPath (Join-Path $scripts 'common.ai')).Hash -eq $original) { throw 'Install did not replace fixture script.' }
     & (Join-Path $PSScriptRoot 'Install.ps1') -GamePath $game -StateDirectory $state -Restore
     if ((Get-FileHash -LiteralPath (Join-Path $scripts 'common.ai')).Hash -ne $original) { throw 'Restore did not recover original bytes.' }
+    foreach ($name in $originals.Keys) { if ((Get-FileHash -LiteralPath (Join-Path $scripts $name)).Hash -ne $originals[$name]) { throw "Restore failed: $name" } }
     if (Test-Path -LiteralPath (Join-Path $state 'installation.json')) { throw 'Restore must retire the manifest to allow reinstall.' }
     & (Join-Path $PSScriptRoot 'Install.ps1') -GamePath $game -StateDirectory $state
     Add-Content -LiteralPath (Join-Path $scripts 'common.ai') -Value 'external change'

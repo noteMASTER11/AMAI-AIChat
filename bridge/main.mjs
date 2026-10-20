@@ -74,6 +74,7 @@ async function writeState() {
     model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session,
     transport: { poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
     bots: [...bots.values()], queue: scheduler.queue.map(e => ({ session: e.session, seq: e.seq, kind: e.kind, bot: e.bot, text: e.text, expires: e.expires })),
+    human,
     activeRequest, memory: process.memoryUsage(), cpuPercent,
     relationships: { session: inbox.session, pairs: relationships.sessions.get(inbox.session) || {} },
     observations: [...observations.latest.values()],
@@ -197,7 +198,7 @@ try {
             }
             for (const event of events) {
               if (event.kind === 'tick') continue;
-              if (event.kind !== 'bot' || event.seq !== 0) log('game-event', event);
+              if (event.kind !== 'chat' && (event.kind !== 'bot' || event.seq !== 0)) log('game-event', event);
               if (event.kind === 'off') { tick = null; scheduler.reset(null); bots.clear(); continue; }
               if (event.kind === 'bot') { bots.set(event.bot, { ...personas[event.bot % personas.length], slot: event.bot, name: event.text, race: event.unitType, allies: alliesFrom(event.extra) || [event.bot] }); continue; }
               if (event.kind === 'hello') { human.name = event.extra || 'Игрок'; history.push(event); continue; }
@@ -209,6 +210,7 @@ try {
                 event.recipients = team ? allies : [...bots.keys()];
                 event.channel = team ? 'team' : 'all';
                 event.text = event.text.replace(/^@(all|team)\s+/i, '');
+                log('game-event', { ...event, inputChannelSource: 'bridge-mode' });
               }
               const bot = event.bot >= 0 ? bots.get(event.bot) : chooseBot(event.text, event.recipients);
               if (!bot) continue;

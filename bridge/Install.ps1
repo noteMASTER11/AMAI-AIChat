@@ -44,7 +44,7 @@ if ($Restore) {
 if (Test-Path -LiteralPath $manifestPath) { throw 'An installation manifest already exists; use -Restore before reinstalling.' }
 $backup = Join-Path $StateDirectory ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8))
 New-Item -ItemType Directory -Path $backup -Force | Out-Null
-$files = @('common.ai', 'Blizzard.j') | ForEach-Object {
+$files = @('common.ai', 'Blizzard.j', 'human.ai', 'orc.ai', 'elf.ai', 'undead.ai') | ForEach-Object {
     $name = $_
     $source = Join-Path $repo ('Scripts\REFORGED\' + $name)
     $destination = Join-Path $target $name
