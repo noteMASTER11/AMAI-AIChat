@@ -19,6 +19,9 @@ try {
     & (Join-Path $PSScriptRoot 'Install.ps1') -GamePath $game -StateDirectory $state
     foreach ($name in $originals.Keys) { if ((Get-FileHash -LiteralPath (Join-Path $scripts $name)).Hash -ne (Get-FileHash -LiteralPath (Join-Path $repo ('Scripts\REFORGED\' + $name))).Hash) { throw "Wrong installed script: $name" } }
     if ((Get-FileHash -LiteralPath (Join-Path $scripts 'common.ai')).Hash -eq $original) { throw 'Install did not replace fixture script.' }
+    & (Join-Path $PSScriptRoot 'Install-WhenClosed.ps1') -GamePath $game -StateDirectory $state -Update
+    $updatedManifest = Get-Content -LiteralPath (Join-Path $state 'installation.json') -Raw | ConvertFrom-Json
+    foreach ($file in $updatedManifest.files) { if ($file.originalHash -ne $originals[$file.name]) { throw ('Update lost the original backup: ' + $file.name) } }
     & (Join-Path $PSScriptRoot 'Install.ps1') -GamePath $game -StateDirectory $state -Restore
     if ((Get-FileHash -LiteralPath (Join-Path $scripts 'common.ai')).Hash -ne $original) { throw 'Restore did not recover original bytes.' }
     foreach ($name in $originals.Keys) { if ((Get-FileHash -LiteralPath (Join-Path $scripts $name)).Hash -ne $originals[$name]) { throw "Restore failed: $name" } }
@@ -28,7 +31,7 @@ try {
     $refused = $false
     try { & (Join-Path $PSScriptRoot 'Install.ps1') -GamePath $game -StateDirectory $state -Restore } catch { $refused = $_.Exception.Message -like '*changed after installation*' }
     if (-not $refused) { throw 'Restore overwrote an external modification.' }
-    Write-Output 'PASS: fixture install, byte-exact restore, reinstall, modified-file refusal.'
+    Write-Output 'PASS: fixture install, update preserving original backups, byte-exact restore, reinstall, modified-file refusal.'
 } finally {
     if ($null -eq $previousRuntime) { Remove-Item Env:AMAI_RUNTIME -ErrorAction SilentlyContinue } else { $env:AMAI_RUNTIME = $previousRuntime }
     $resolved = [IO.Path]::GetFullPath($fixture)

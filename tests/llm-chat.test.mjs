@@ -17,7 +17,16 @@ describe('Local LLM chat channel and observation boundaries', () => {
     game.LLMPoll();
 
     assert.equal(game.llmLastVisible, 1);
-    assert.ok(game.shown[0].at(-1).includes('[Союзники]'));
+    assert.deepEqual(game.shown, [{ speaker: 1, channel: 1, text: 'hello' }]);
+    assert.equal(game.overlays.length, 0);
+  });
+  it('Given a public reply, when it arrives, then native chat receives the bot author and unprefixed text', () => {
+    const game = llmChatGame({ channel: 'all', recipient: 0 });
+
+    game.LLMPoll();
+
+    assert.deepEqual(game.shown, [{ speaker: 1, channel: 0, text: 'hello' }]);
+    assert.equal(game.overlays.length, 0);
   });
   it('Given an enemy recipient, when a forged team route arrives, then the game rejects its acknowledgement', () => {
     const game = llmChatGame({ recipient: 2 });

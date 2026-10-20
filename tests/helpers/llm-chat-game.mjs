@@ -4,7 +4,7 @@ import { compile } from './jass.mjs';
 const source = readFileSync(new URL('../../LLMChat.eai', import.meta.url), 'utf8');
 export function llmChatGame({ humanAllied = false, channel = 'team', recipient = 3 } = {}) {
   const tooltip = { value: 'original' };
-  const shown = [], observed = [];
+  const shown = [], overlays = [], observed = [];
   const allies = new Set(['1:3', '3:1', ...(humanAllied ? ['0:1', '1:0'] : [])]);
   const state = {
     llmActive: true, llmSeq: 1, llmTick: 0, llmLastReply: 0, llmLastVisible: 0,
@@ -21,11 +21,12 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     I2S: String, R2S: String, ModuloInteger: (a, b) => a % b,
     PreloadGenClear: () => {}, PreloadGenStart: () => {}, PreloadGenEnd: () => {}, Preload: () => {},
     LLMColor: () => 'ffffff', LLMSample: () => {},
-    DisplayTimedTextToPlayer: (...args) => shown.push(args),
+    DisplayTimedTextToPlayer: (...args) => overlays.push(args),
+    BlzDisplayChatMessage: (speaker, channel, text) => shown.push({ speaker, channel, text }),
     GetOwningPlayer: unit => unit.owner, GetUnitTypeId: unit => unit.id, GetUnitName: unit => unit.name,
     IsUnitVisible: (unit, bot) => unit.visibleTo.includes(bot),
     LLMRecord: (...args) => observed.push(args),
-    shown, observed,
+    shown, overlays, observed,
   };
   vm.runInContext(['LLMEncode', 'LLMField', 'LLMAllies', 'LLMObserve', 'LLMPoll'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
   return state;

@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Fixed
+
+- (AI chat) Bot replies now use Warcraft's native chat renderer with the bot as sender, instead of a timed screen overlay. Player color and localized channel labels are supplied by the game; explicit team visibility filtering is retained.
+- (Installer) Updating an existing global installation after game exit preserves the original pre-fork script backups.
+
 ### Added
 
 - (AI chat) Local single-human JASS melee matches can use contextual Russian bot conversations through Codex App Server with GPT-6.1 Sol and low effort. Bots can address players or other bots; allied conversations use team channels, with one bounded followup per exchange.

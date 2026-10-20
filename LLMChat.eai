@@ -321,7 +321,7 @@ function LLMPoll takes nothing returns nothing
     local string incoming
     local string text
     local string channel
-    local string prefix
+    local integer chatMode
     if not llmActive then
         return
     endif
@@ -342,11 +342,14 @@ function LLMPoll takes nothing returns nothing
             if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and text != "" and (channel == "all" or (channel == "team" and recipient >= 0 and recipient < GetBJMaxPlayers() and recipient != bot and IsPlayerAlly(Player(bot), Player(recipient)) and IsPlayerAlly(Player(recipient), Player(bot)))) then
                 set llmLastVisible = 0
                 if channel == "all" or (IsPlayerAlly(Player(bot), Player(llmHuman)) and IsPlayerAlly(Player(llmHuman), Player(bot))) then
-                    set prefix = "[Все] "
+                    set chatMode = 0
                     if channel == "team" then
-                        set prefix = "[Союзники] "
+                        set chatMode = 1
                     endif
-                    call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 15, prefix + "|cff" + LLMColor(Player(bot)) + GetPlayerName(Player(bot)) + "|r: " + text)
+                    // The native renders author, player color and localized
+                    // channel label. It does not filter viewers, so retain
+                    // the explicit alliance check above before calling it.
+                    call BlzDisplayChatMessage(Player(bot), chatMode, text)
                     set llmLastVisible = 1
                 endif
                 set llmLastReply = seq
