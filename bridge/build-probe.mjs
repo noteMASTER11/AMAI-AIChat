@@ -40,6 +40,7 @@ script = script.replace('function main takes', functions + '\n' + probe + '\nfun
 script = script.replace(/call SetPlayerController\(\s*Player\(1\),\s*MAP_CONTROL_USER\s*\)/g, 'call SetPlayerController(Player(1), MAP_CONTROL_COMPUTER)');
 script = script.replace(/call SetPlayerSlotAvailable\(\s*Player\(1\),\s*MAP_CONTROL_USER\s*\)/g, 'call SetPlayerSlotAvailable(Player(1), MAP_CONTROL_COMPUTER)');
 script = script.replace(/call MeleeInitVictoryDefeat\([^\n]*/g, '// Probe intentionally does not end on victory/defeat.');
+script = script.replace(/call MeleeStartingAI\([^\n]*/g, '// Probe uses controlled events; avoid starting a second global collector.');
 script = script.replace(/call InitGlobals\([^\n]*/, '$&\n    call ProbeLLMInit()\n    call TimerStart(CreateTimer(), 4.0, false, function ProbeStart)');
 const sourceFile = path.join(repo, 'runtime/probe-war3map.j');
 fs.writeFileSync(sourceFile, script);

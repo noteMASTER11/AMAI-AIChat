@@ -1,7 +1,7 @@
 import { unlink } from 'node:fs/promises';
 
 const sessionPattern = /^\d{6,18}$/;
-const kinds = new Set(['hello', 'tick', 'bot', 'chat', 'death', 'revive', 'off']);
+const kinds = new Set(['hello', 'tick', 'bot', 'chat', 'death', 'revive', 'off', 'move', 'position', 'build-start', 'build-finish', 'build-cancel', 'upgrade-start', 'upgrade-finish', 'upgrade-cancel', 'research', 'level', 'skill', 'abilities', 'item-pickup', 'item-drop', 'item-use', 'item-buy', 'item-sell', 'inventory']);
 const decode = s => s.replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 export function replyWindow(event, tick, now, delayMs) {
   if (!Number.isFinite(event.expires) || event.expires <= now + delayMs) throw new Error('Reply expired before its game poll');
@@ -31,9 +31,10 @@ export function cleanText(text) {
   return [...String(text).replace(/\|c[0-9a-f]{8}/gi, '').replace(/\|[rn]/gi, ' ').replace(/[\x00-\x1f\x7f|]/g, ' ').replace(/\s+/g, ' ').trim()].slice(0, 180).join('');
 }
 
-export function makeReply(session, seq, bot, text, deadline, token = seq) {
+export function makeReply(session, seq, bot, text, deadline, token = seq, route = { channel: 'all', recipient: -1 }) {
   if (!sessionPattern.test(session) || !Number.isSafeInteger(seq) || seq < 1 || !Number.isSafeInteger(token) || token < 1 || !Number.isSafeInteger(bot) || bot < 0 || bot > 23 || !Number.isFinite(deadline) || deadline <= 0) throw new Error('Invalid reply identity/deadline');
-  const payload = `${session}|${token}|${bot}|${deadline}|${cleanText(text)}|${seq}`.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  if (!['all', 'team'].includes(route.channel) || !Number.isInteger(route.recipient) || route.recipient < (route.channel === 'team' ? 0 : -1) || route.recipient > 23 || route.recipient === bot) throw new Error('Invalid reply route');
+  const payload = `${session}|${token}|${bot}|${deadline}|${cleanText(text)}|${seq}|${route.channel}|${route.recipient}`.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
   return `function PreloadFiles takes nothing returns nothing\ncall BlzSetAbilityTooltip(1097690227, "${payload}", 0)\nendfunction\n`;
 }
 

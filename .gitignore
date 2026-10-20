@@ -22,3 +22,6 @@ Blizzard6.j
 Electron/node_modules/
 runtime/
 .superpowers/
+dashboard/node_modules/
+dashboard/dist/
+dashboard/evidence/

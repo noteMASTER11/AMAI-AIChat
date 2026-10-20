@@ -2,7 +2,6 @@ param([string]$GamePath = 'D:\Games\Warcraft III', [string]$StateDirectory, [swi
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Raw | ConvertFrom-Json
-$verificationRoot = if ($env:AMAI_RUNTIME) { $env:AMAI_RUNTIME } else { $config.runtime }
 if (-not $StateDirectory) { $StateDirectory = Join-Path $repo 'runtime' }
 $StateDirectory = [IO.Path]::GetFullPath($StateDirectory)
 if (-not $StateDirectory.StartsWith('D:\ChatGPT\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Installation state must be under D:\ChatGPT.' }
@@ -40,7 +39,8 @@ if ($Restore) {
     Write-Output 'Original AMAI files restored.'
     return
 }
-if (-not (Test-Path -LiteralPath (Join-Path $verificationRoot 'transport-verified.json'))) { throw 'Run the probe map and obtain an observed game acknowledgement before global installation.' }
+# The user explicitly chose direct global replacement after Warcraft exits.
+# An in-game round trip is reported as pending rather than blocking installation.
 if (Test-Path -LiteralPath $manifestPath) { throw 'An installation manifest already exists; use -Restore before reinstalling.' }
 $backup = Join-Path $StateDirectory ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8))
 New-Item -ItemType Directory -Path $backup -Force | Out-Null
@@ -68,4 +68,4 @@ try {
     Remove-Item -LiteralPath $manifestPath
     throw $installError
 }
-Write-Output 'AMAI LLM scripts installed. Start the bridge, then type -llm on in a local melee match.'
+Write-Output 'AMAI LLM scripts installed. Start the bridge; LLM chat activates automatically in a new local JASS melee match.'

@@ -5,6 +5,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { parseEvents, makeReply, Inbox, replyWindow, expireReplies } from './protocol.mjs';
 import { Scheduler } from './scheduler.mjs';
 import { CodexClient } from './codex.mjs';
+import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, parseAcknowledgement } from './conversation.mjs';
+import { Relationships, Observations } from './context.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(await readFile(path.join(here, 'config.json'), 'utf8'));
@@ -35,6 +37,7 @@ const scheduler = new Scheduler(config);
 const client = new CodexClient(config, log);
 const bots = new Map();
 const pendingReplies = new Map();
+const awaitingDelivery = new Map();
 let history = [];
 let tick = null;
 let lastFile = '';
@@ -48,53 +51,107 @@ let publishedPoll = -1;
 let attempts = 0;
 let lastCleanup = 0;
 let nextModelAttempt = 0;
+let lastStateWrite = 0;
+let lastLimitsRead = 0;
+let cpuPrevious = process.cpuUsage();
+let cpuSampleAt = Date.now();
+let cpuPercent = 0;
+let activeRequest = null;
+let human = { slot: 0, name: 'Игрок' };
+const lastComment = new Map();
+const relationshipsFile = path.join(config.runtime, 'relationships.json');
+const relationships = new Relationships(await readFile(relationshipsFile, 'utf8').then(JSON.parse).catch(() => null));
+const observations = new Observations();
+const previousState = await readFile(path.join(config.runtime, 'status.json'), 'utf8').then(JSON.parse).catch(() => null);
+
+async function writeState() {
+  const now = Date.now();
+  const cpu = process.cpuUsage(cpuPrevious);
+  cpuPercent = (cpu.user + cpu.system) / Math.max(1, now - cpuSampleAt) / 10;
+  cpuPrevious = process.cpuUsage(); cpuSampleAt = now;
+  const state = {
+    schema: 1, updatedAt: new Date(now).toISOString(), pid: process.pid, uptimeSeconds: process.uptime(),
+    model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session,
+    transport: { poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
+    bots: [...bots.values()], queue: scheduler.queue.map(e => ({ session: e.session, seq: e.seq, kind: e.kind, bot: e.bot, text: e.text, expires: e.expires })),
+    activeRequest, memory: process.memoryUsage(), cpuPercent,
+    relationships: { session: inbox.session, pairs: relationships.sessions.get(inbox.session) || {} },
+    observations: [...observations.latest.values()],
+    settings: { globalCooldownMs: config.globalCooldownMs, botCooldownMs: config.botCooldownMs, timeoutMs: config.timeoutMs, eventTtlMs: config.eventTtlMs, chatTtlMs: config.chatTtlMs },
+    cooldowns: { globalUntil: Number.isFinite(scheduler.lastGlobal) ? scheduler.lastGlobal + config.globalCooldownMs : null, bots: Object.fromEntries([...scheduler.lastBot].map(([id, at]) => [id, at + config.botCooldownMs])) },
+  };
+  const filename = path.join(config.runtime, 'status.json');
+  await writeFile(filename + '.tmp', JSON.stringify(state)); await rename(filename + '.tmp', filename);
+}
 
 const stop = () => { running = false; };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 
-function chooseBot(text) {
-  const list = [...bots.values()];
+function chooseBot(text, recipients = [...bots.keys()]) {
+  const list = [...bots.values()].filter(bot => recipients.includes(bot.slot));
   if (!list.length) return null;
   return list.find(bot => text.toLowerCase().includes(bot.name.toLowerCase())) || list[cursor++ % list.length];
 }
 
-async function publish(event, bot, text) {
+async function publish(event, bot, text, route = { channel: 'all', recipient: -1, recipients: [human.slot, ...bots.keys()] }) {
   if (!tick || event.session !== inbox.session || Date.now() - tick.wall > 3000) throw new Error('No live game heartbeat');
   const target = Math.max(tick.unitType + 4, publishedPoll + 1);
   const window = replyWindow(event, tick, Date.now(), (target - tick.unitType) * 500);
   const filename = path.join(config.mailbox, `reply-${event.session}-${target}.pld`);
   const temporary = filename + '.tmp';
-  await writeFile(temporary, makeReply(event.session, event.seq, bot, text, window.gameDeadline, target), 'utf8');
+  await writeFile(temporary, makeReply(event.session, event.seq, bot, text, window.gameDeadline, target, route), 'utf8');
   await rename(temporary, filename);
   pendingReplies.set(filename, window.expiresAt);
   setTimeout(() => expireReplies(pendingReplies, Date.now()).catch(error => log('expiry-error', error.message)), Math.max(1, window.expiresAt - Date.now())).unref();
   publishedPoll = target;
-  log('reply-published', { session: event.session, seq: event.seq, bot, poll: target, text });
+  const delivery = { session: event.session, seq: event.seq, bot, poll: target, text, ...route, depth: event.depth || 0, purpose: event.kind ? 'llm' : 'probe', publishedAt: Date.now(), expiresAt: window.expiresAt };
+  awaitingDelivery.set(target, delivery);
+  log('reply-published', delivery);
 }
 
 async function generateOne(event) {
   const bot = bots.get(event.bot);
   let shown = false;
+  let outcome = 'failed';
+  const startedAt = Date.now();
+  activeRequest = { session: event.session, seq: event.seq, bot: event.bot, kind: event.kind, startedAt };
+  log('generation-started', activeRequest);
   try {
     if (!bot) return;
-    const visibleHistory = history.filter(e => e.kind === 'reply' || e.bot === bot.slot || e.bot < 0 || e.kind === 'hello');
-    const answer = await client.generate(event, bot, visibleHistory.slice(-20));
-    if (answer.silent || !answer.text || !running || !scheduler.isCurrent(event, Date.now())) return;
-    await publish(event, event.bot, answer.text);
-    history.push({ kind: 'reply', bot: event.bot, text: answer.text });
+    let audience = audienceFor(bot, bots, human);
+    if (event.kind === 'chat') audience = audience.filter(p => p.slot === human.slot);
+    if (event.kind === 'bot-chat') audience = audience.filter(p => p.slot === event.sourceBot);
+    if (!audience.length) { outcome = 'silent'; return; }
+    const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience) };
+    const answer = await client.generate(context, bot, historyFor(bot.slot, history));
+    if (!running || event.session !== inbox.session) { outcome = 'expired'; return; }
+    const coefficient = relationships.apply(event.session, bot.slot, answer.requestId, answer);
+    await writeFile(relationshipsFile + '.tmp', JSON.stringify(relationships)); await rename(relationshipsFile + '.tmp', relationshipsFile);
+    log('event-assessment', { session: event.session, seq: event.seq, bot: bot.slot, valence: answer.valence, target: answer.relationshipTarget, delta: answer.relationshipDelta, coefficient, requestId: answer.requestId });
+    if (answer.silent || !answer.text) { outcome = 'silent'; return; }
+    if (!running || !scheduler.isCurrent(event, Date.now())) { outcome = 'expired'; return; }
+    const route = routeFor(bot, answer.recipient, bots, human.slot);
+    if (event.kind === 'bot-chat' && route.recipient !== event.sourceBot) throw new Error('Followup addressed to a different conversation');
+    await publish(event, event.bot, answer.text, route);
     shown = true;
+    outcome = 'published';
   } catch (error) {
     log('generation-skipped', error.message);
     if (client.rpc?.closed) { modelReady = false; nextModelAttempt = Date.now() + 30000; await client.close(); }
   }
-  finally { scheduler.done(event.bot, Date.now(), shown, event.seq); generation = null; }
+  finally {
+    log('generation-finished', { session: event.session, seq: event.seq, bot: event.bot, status: outcome, durationMs: Date.now() - startedAt });
+    activeRequest = null; scheduler.done(event.bot, Date.now(), shown, event.seq); generation = null;
+  }
 }
 
 try {
-  log('bridge-start', { mode, mailbox: config.mailbox, model: config.model, effort: config.effort });
-  log('instructions', 'In a new local melee match type -llm on. The bridge first verifies an in-game loopback; then LLM chat activates automatically.');
+  log('bridge-start', { mode, mailbox: config.mailbox, model: config.model, effort: config.effort, pid: process.pid });
+  log('instructions', 'New local JASS melee matches enable the collector automatically. The bridge verifies an in-game round trip before enabling LLM replies. Manual commands: -llm on / -llm off.');
   while (running) {
     try {
+      if (Date.now() - lastStateWrite >= 1000) { lastStateWrite = Date.now(); await writeState(); }
+      if (modelReady && Date.now() - lastLimitsRead >= 60000) { lastLimitsRead = Date.now(); client.readRateLimits().catch(() => {}); }
       await expireReplies(pendingReplies, Date.now());
       const filename = path.join(config.mailbox, 'events.pld');
       const info = await stat(filename);
@@ -110,15 +167,29 @@ try {
           if (!heartbeat) tick = null;
           if (heartbeat) {
             if (scheduler.session !== inbox.session) {
-              scheduler.reset(inbox.session); bots.clear(); history = []; verified = false; probe = null; attempts = 0; publishedPoll = -1;
-              log('game-session', inbox.session);
+              scheduler.reset(inbox.session); bots.clear(); history = []; observations.clear(); awaitingDelivery.clear(); lastComment.clear(); verified = false; probe = null; attempts = 0; publishedPoll = -1;
+              if (previousState?.session === inbox.session) for (const event of previousState.observations || []) observations.add(event);
+              log('game-session', { session: inbox.session });
             }
             tick = { ...heartbeat, wall: info.mtimeMs };
-            if (heartbeat.unitName === 'roster-v1') {
+            human.slot = heartbeat.human;
+            const acknowledgement = parseAcknowledgement(tick.extra);
+            for (const [poll, delivery] of awaitingDelivery) {
+              if (acknowledgement.poll === poll) {
+                log('reply-acknowledged', { ...delivery, visible: acknowledgement.visible, delayMs: Date.now() - delivery.publishedAt }); awaitingDelivery.delete(poll);
+                if (delivery.purpose === 'llm') {
+                  history.push({ ...delivery, kind: 'reply' });
+                  const followup = followupFor(delivery, bots, heartbeat.time);
+                  if (followup) { scheduler.add(followup, Date.now()); log('bot-dialogue', followup); }
+                }
+              }
+              else if (Date.now() >= delivery.expiresAt) { log('reply-unconfirmed', delivery); awaitingDelivery.delete(poll); }
+            }
+            if (heartbeat.unitName.startsWith('roster-v')) {
               const roster = new Set(events.filter(e => e.kind === 'bot' && e.seq === 0).map(e => e.bot));
               for (const id of bots.keys()) if (!roster.has(id)) bots.delete(id);
             }
-            if (probe && Number(tick.extra) >= probe.seq) {
+            if (probe && acknowledgement.poll >= probe.seq) {
               verified = true;
               await writeFile(path.join(config.runtime, 'transport-verified.json'), JSON.stringify({ verifiedAt: new Date().toISOString(), session: inbox.session, seq: probe.seq, game: '3.0.1', method: 'observed-game-ack' }, null, 2));
               log('transport-verified', { session: inbox.session, seq: probe.seq }); probe = null;
@@ -128,15 +199,30 @@ try {
               if (event.kind === 'tick') continue;
               if (event.kind !== 'bot' || event.seq !== 0) log('game-event', event);
               if (event.kind === 'off') { tick = null; scheduler.reset(null); bots.clear(); continue; }
-              if (event.kind === 'bot') { bots.set(event.bot, { ...personas[event.bot % personas.length], slot: event.bot, name: event.text, race: event.unitType }); continue; }
-              if (event.kind === 'hello') { history.push(event); continue; }
-              if (!['chat', 'death', 'revive'].includes(event.kind)) continue;
-              const bot = event.bot >= 0 ? bots.get(event.bot) : chooseBot(event.text);
+              if (event.kind === 'bot') { bots.set(event.bot, { ...personas[event.bot % personas.length], slot: event.bot, name: event.text, race: event.unitType, allies: alliesFrom(event.extra) || [event.bot] }); continue; }
+              if (event.kind === 'hello') { human.name = event.extra || 'Игрок'; history.push(event); continue; }
+              if (event.kind === 'chat') {
+                const allies = [...bots.values()].filter(bot => bot.allies.includes(human.slot)).map(bot => bot.slot);
+                const explicitAll = /^@all\s/i.test(event.text) || event.extra === 'input=all';
+                const explicitTeam = /^@team\s/i.test(event.text) || event.extra === 'input=team';
+                const team = !explicitAll && (explicitTeam || allies.length > 0);
+                event.recipients = team ? allies : [...bots.keys()];
+                event.channel = team ? 'team' : 'all';
+                event.text = event.text.replace(/^@(all|team)\s+/i, '');
+              }
+              const bot = event.bot >= 0 ? bots.get(event.bot) : chooseBot(event.text, event.recipients);
               if (!bot) continue;
               history.push(event);
-              if (verified && mode === 'llm') scheduler.add({ ...event, bot: bot.slot }, Date.now(), Math.max(0, (heartbeat.time - event.time) * 1000));
+              observations.add(event);
+              const important = ['chat', 'death', 'revive', 'build-finish', 'upgrade-finish', 'research', 'level', 'skill', 'inventory'].includes(event.kind) && !event.extra.includes(';refresh=true');
+              const throttled = !['chat', 'death', 'revive'].includes(event.kind);
+              const key = `${bot.slot}:${event.kind}`;
+              if (verified && mode === 'llm' && important && (!throttled || Date.now() - (lastComment.get(key) || 0) >= 45000)) {
+                scheduler.add({ ...event, bot: bot.slot }, Date.now(), Math.max(0, (heartbeat.time - event.time) * 1000));
+                lastComment.set(key, Date.now());
+              }
             }
-            history = history.slice(-32);
+            history = history.slice(-256);
           }
         }
       }
@@ -148,7 +234,7 @@ try {
       }
       if (verified && mode === 'llm' && !modelReady && Date.now() >= nextModelAttempt) {
         nextModelAttempt = Date.now() + 30000;
-        await client.start(); modelReady = true;
+        await client.start(); modelReady = true; lastLimitsRead = Date.now();
         log('llm-active', 'Only generated conversations; AMAI template chat is muted.');
       }
       if (verified && mode === 'llm' && modelReady && !generation && tick && Date.now() - tick.wall < 3000) {
@@ -168,6 +254,7 @@ try {
     await sleep(200);
   }
 } finally {
+  log('bridge-stop', { pid: process.pid });
   await expireReplies(pendingReplies, Infinity);
   await client.close();
   if (generation) await generation;

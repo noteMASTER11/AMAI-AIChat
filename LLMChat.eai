@@ -1,4 +1,4 @@
-// Local-only, explicitly enabled by the human with -llm on.
+// Local-only; enabled after melee AI startup or by -llm on.
 // Unique incoming filenames avoid caching a previous preload script.
 function LLMEncode takes string s returns string
     local integer i = 0
@@ -29,7 +29,7 @@ endfunction
 
 function LLMRecord takes string kind, integer bot, integer unitType, string unitName, integer level, integer owner, integer killer, string text, string extra returns nothing
     set llmSeq = llmSeq + 1
-    set llmRecords[ModuloInteger(llmSeq, 64)] = "AMAI1|" + llmSession + "|" + I2S(llmSeq) + "|" + R2S(TimerGetElapsed(llmClock)) + "|" + kind + "|" + I2S(bot) + "|" + I2S(llmHuman) + "|" + I2S(unitType) + "|" + LLMEncode(unitName) + "|" + I2S(level) + "|" + I2S(owner) + "|" + I2S(killer) + "|" + LLMEncode(text) + "|" + LLMEncode(extra)
+    set llmRecords[ModuloInteger(llmSeq, 256)] = "AMAI1|" + llmSession + "|" + I2S(llmSeq) + "|" + R2S(TimerGetElapsed(llmClock)) + "|" + kind + "|" + I2S(bot) + "|" + I2S(llmHuman) + "|" + I2S(unitType) + "|" + LLMEncode(unitName) + "|" + I2S(level) + "|" + I2S(owner) + "|" + I2S(killer) + "|" + LLMEncode(text) + "|" + LLMEncode(extra)
 endfunction
 
 function LLMField takes string s, integer field returns string
@@ -83,15 +83,245 @@ function LLMColor takes player p returns string
     return "ffcc00"
 endfunction
 
+function LLMAllies takes integer bot returns string
+    local integer i = 0
+    local string result = "allies:"
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING and (i == bot or (IsPlayerAlly(Player(bot), Player(i)) and IsPlayerAlly(Player(i), Player(bot)))) then
+            if result != "allies:" then
+                set result = result + ","
+            endif
+            set result = result + I2S(i)
+        endif
+        set i = i + 1
+    endloop
+    return result
+endfunction
+
+function LLMObserve takes string kind, unit u, integer value, string text, string extra, boolean alliedOnly returns nothing
+    local integer i = 0
+    local integer owner
+    if not llmActive or u == null then
+        return
+    endif
+    set owner = GetPlayerId(GetOwningPlayer(u))
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
+            if owner == i or (not alliedOnly and IsUnitVisible(u, Player(i))) or (alliedOnly and IsPlayerAlly(Player(i), Player(owner)) and IsPlayerAlly(Player(owner), Player(i))) then
+                call LLMRecord(kind, i, GetUnitTypeId(u), GetUnitName(u), value, owner, -1, text, extra + ";unit=" + I2S(GetHandleId(u)))
+            endif
+        endif
+        set i = i + 1
+    endloop
+endfunction
+
+function LLMInventory takes unit u returns string
+    local integer i = 0
+    local item it
+    local string result = ""
+    loop
+        exitwhen i >= 6
+        set it = UnitItemInSlot(u, i)
+        if i > 0 then
+            set result = result + "; "
+        endif
+        set result = result + I2S(i + 1) + ":"
+        if it != null then
+            set result = result + GetItemName(it) + " [" + I2S(GetItemTypeId(it)) + ",charges=" + I2S(GetItemCharges(it)) + "]"
+        else
+            set result = result + "empty"
+        endif
+        set i = i + 1
+    endloop
+    set it = null
+    return result
+endfunction
+
+function LLMAbilities takes unit u returns string
+    local integer i = 0
+    local integer id
+    local ability a
+    local string result = ""
+    loop
+        exitwhen i >= 64
+        set a = BlzGetUnitAbilityByIndex(u, i)
+        exitwhen a == null
+        set id = BlzGetAbilityId(a)
+        if BlzGetAbilityBooleanField(a, ABILITY_BF_HERO_ABILITY) and GetUnitAbilityLevel(u, id) > 0 then
+            set result = result + GetObjectName(id) + " [" + I2S(id) + ",level=" + I2S(GetUnitAbilityLevel(u, id)) + "]; "
+        endif
+        set i = i + 1
+    endloop
+    set a = null
+    return result
+endfunction
+
+function LLMSample takes nothing returns nothing
+    local group heroes = CreateGroup()
+    local unit u
+    local integer owner = 0
+    local integer bot
+    local integer key
+    local real x
+    local real y
+    local real dx
+    local real dy
+    local string inventory
+    local string skills
+    local string refresh
+    loop
+        exitwhen owner >= GetBJMaxPlayers()
+        if GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
+            call GroupEnumUnitsOfPlayer(heroes, Player(owner), null)
+            loop
+                set u = FirstOfGroup(heroes)
+                exitwhen u == null
+                call GroupRemoveUnit(heroes, u)
+                if IsUnitType(u, UNIT_TYPE_HERO) and GetUnitTypeId(u) != 0 and not IsUnitType(u, UNIT_TYPE_DEAD) then
+                    set key = GetHandleId(u)
+                    set x = GetUnitX(u)
+                    set y = GetUnitY(u)
+                    set inventory = LLMInventory(u)
+                    set skills = LLMAbilities(u)
+                    set bot = 0
+                    loop
+                        exitwhen bot >= GetBJMaxPlayers()
+                        if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(bot)) == PLAYER_SLOT_STATE_PLAYING and (owner == bot or IsUnitVisible(u, Player(bot))) then
+                            set dx = x - LoadReal(llmCache, key, bot * 8 + 1)
+                            set dy = y - LoadReal(llmCache, key, bot * 8 + 2)
+                            if not HaveSavedReal(llmCache, key, bot * 8 + 1) or dx * dx + dy * dy >= 409600 or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 8) >= 15 then
+                                call LLMRecord("position", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, GetHeroProperName(u), "x=" + R2S(x) + ";y=" + R2S(y) + ";unit=" + I2S(key))
+                                call SaveReal(llmCache, key, bot * 8 + 1, x)
+                                call SaveReal(llmCache, key, bot * 8 + 2, y)
+                                call SaveReal(llmCache, key, bot * 8, TimerGetElapsed(llmClock))
+                            endif
+                            if LoadStr(llmCache, key, bot * 8 + 3) != inventory or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 8 + 6) >= 60 then
+                                set refresh = "false"
+                                if LoadStr(llmCache, key, bot * 8 + 3) == inventory then
+                                    set refresh = "true"
+                                endif
+                                call LLMRecord("inventory", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, inventory, "unit=" + I2S(key) + ";proper=" + GetHeroProperName(u) + ";refresh=" + refresh)
+                                call SaveStr(llmCache, key, bot * 8 + 3, inventory)
+                                call SaveReal(llmCache, key, bot * 8 + 6, TimerGetElapsed(llmClock))
+                            endif
+                            if owner == bot or (IsPlayerAlly(Player(bot), Player(owner)) and IsPlayerAlly(Player(owner), Player(bot))) then
+                                if LoadStr(llmCache, key, bot * 8 + 4) != skills or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 8 + 7) >= 60 then
+                                    call LLMRecord("abilities", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, skills, "unit=" + I2S(key) + ";proper=" + GetHeroProperName(u))
+                                    call SaveStr(llmCache, key, bot * 8 + 4, skills)
+                                    call SaveReal(llmCache, key, bot * 8 + 7, TimerGetElapsed(llmClock))
+                                endif
+                            endif
+                        endif
+                        set bot = bot + 1
+                    endloop
+                endif
+            endloop
+        endif
+        set owner = owner + 1
+    endloop
+    call DestroyGroup(heroes)
+    set heroes = null
+    set u = null
+endfunction
+
+function LLMOnTelemetry takes nothing returns nothing
+    local unit u = GetTriggerUnit()
+    local item it = null
+    local eventid ev = GetTriggerEventId()
+    local string kind = ""
+    local string text = ""
+    local string extra = ""
+    local integer value = 0
+    local boolean alliedOnly = false
+    if not llmActive then
+        set u = null
+        return
+    endif
+    if ev == EVENT_PLAYER_UNIT_CONSTRUCT_START then
+        set u = GetConstructingStructure()
+        set kind = "build-start"
+    elseif ev == EVENT_PLAYER_UNIT_CONSTRUCT_FINISH then
+        set u = GetConstructedStructure()
+        set kind = "build-finish"
+    elseif ev == EVENT_PLAYER_UNIT_CONSTRUCT_CANCEL then
+        set u = GetCancelledStructure()
+        set kind = "build-cancel"
+    elseif ev == EVENT_PLAYER_UNIT_UPGRADE_START then
+        set kind = "upgrade-start"
+    elseif ev == EVENT_PLAYER_UNIT_UPGRADE_FINISH then
+        set kind = "upgrade-finish"
+    elseif ev == EVENT_PLAYER_UNIT_UPGRADE_CANCEL then
+        set kind = "upgrade-cancel"
+    elseif ev == EVENT_PLAYER_UNIT_RESEARCH_FINISH then
+        set kind = "research"
+        set text = GetObjectName(GetResearched())
+        set extra = "id=" + I2S(GetResearched())
+        set alliedOnly = true
+    elseif ev == EVENT_PLAYER_HERO_LEVEL then
+        set kind = "level"
+        set value = GetHeroLevel(u)
+    elseif ev == EVENT_PLAYER_HERO_SKILL then
+        set kind = "skill"
+        set value = GetLearnedSkillLevel()
+        set text = GetObjectName(GetLearnedSkill())
+        set extra = "ability=" + I2S(GetLearnedSkill())
+        set alliedOnly = true
+    elseif ev == EVENT_PLAYER_UNIT_ISSUED_POINT_ORDER then
+        if not IsUnitType(u, UNIT_TYPE_HERO) or TimerGetElapsed(llmClock) - LoadReal(llmCache, GetHandleId(u), 1000) < 4 then
+            set u = null
+            return
+        endif
+        call SaveReal(llmCache, GetHandleId(u), 1000, TimerGetElapsed(llmClock))
+        set kind = "move"
+        set text = OrderId2String(GetIssuedOrderId())
+        set extra = "x=" + R2S(GetOrderPointX()) + ";y=" + R2S(GetOrderPointY()) + ";order=" + I2S(GetIssuedOrderId())
+        set alliedOnly = true
+    elseif ev == EVENT_PLAYER_UNIT_PICKUP_ITEM then
+        set kind = "item-pickup"
+        set it = GetManipulatedItem()
+    elseif ev == EVENT_PLAYER_UNIT_DROP_ITEM then
+        set kind = "item-drop"
+        set it = GetManipulatedItem()
+    elseif ev == EVENT_PLAYER_UNIT_USE_ITEM then
+        set kind = "item-use"
+        set it = GetManipulatedItem()
+    elseif ev == EVENT_PLAYER_UNIT_SELL_ITEM then
+        set kind = "item-buy"
+        set u = GetBuyingUnit()
+        set it = GetSoldItem()
+    elseif ev == EVENT_PLAYER_UNIT_PAWN_ITEM then
+        set kind = "item-sell"
+        set u = GetTriggerUnit()
+        set it = GetManipulatedItem()
+    endif
+    if it != null then
+        set text = GetItemName(it)
+        set extra = "item=" + I2S(GetItemTypeId(it)) + ";charges=" + I2S(GetItemCharges(it))
+    endif
+    if kind != "" and u != null then
+        if extra == "" then
+            set extra = "x=" + R2S(GetUnitX(u)) + ";y=" + R2S(GetUnitY(u))
+        endif
+        call LLMObserve(kind, u, value, text, extra, alliedOnly)
+    endif
+    set it = null
+    set u = null
+endfunction
+
 function LLMPoll takes nothing returns nothing
-    local integer first = llmSeq - 63
+    local integer first
     local integer i
     local integer seq
     local integer eventSeq
     local integer bot
+    local integer recipient
     local string original
     local string incoming
     local string text
+    local string channel
+    local string prefix
     if not llmActive then
         return
     endif
@@ -106,33 +336,47 @@ function LLMPoll takes nothing returns nothing
         set eventSeq = S2I(LLMField(incoming, 5))
         set bot = S2I(LLMField(incoming, 2))
         set text = LLMField(incoming, 4)
+        set channel = LLMField(incoming, 6)
+        set recipient = S2I(LLMField(incoming, 7))
         if seq == llmTick and seq > llmLastReply and eventSeq > 0 and eventSeq <= llmSeq and bot >= 0 and bot < GetBJMaxPlayers() and TimerGetElapsed(llmClock) <= S2R(LLMField(incoming, 3)) then
-            if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and text != "" then
-                call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 15, "|cff" + LLMColor(Player(bot)) + GetPlayerName(Player(bot)) + "|r: " + text)
+            if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and text != "" and (channel == "all" or (channel == "team" and recipient >= 0 and recipient < GetBJMaxPlayers() and recipient != bot and IsPlayerAlly(Player(bot), Player(recipient)) and IsPlayerAlly(Player(recipient), Player(bot)))) then
+                set llmLastVisible = 0
+                if channel == "all" or (IsPlayerAlly(Player(bot), Player(llmHuman)) and IsPlayerAlly(Player(llmHuman), Player(bot))) then
+                    set prefix = "[Все] "
+                    if channel == "team" then
+                        set prefix = "[Союзники] "
+                    endif
+                    call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 15, prefix + "|cff" + LLMColor(Player(bot)) + GetPlayerName(Player(bot)) + "|r: " + text)
+                    set llmLastVisible = 1
+                endif
                 set llmLastReply = seq
             endif
         endif
     endif
+    if ModuloInteger(llmTick, 10) == 0 then
+        call LLMSample()
+    endif
+    set first = llmSeq - 255
     if first < 1 then
         set first = 1
     endif
     call PreloadGenClear()
     call PreloadGenStart()
-    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v1|0|-1|-1||" + I2S(llmLastReply))
-    // Roster snapshots live outside the 64-event history, so a bridge can
+    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v2|0|-1|-1||" + I2S(llmLastReply) + "," + I2S(llmLastVisible))
+    // Roster snapshots live outside the 256-event history, so a bridge can
     // reconnect at any point in the match without losing bot identities.
     set i = 0
     loop
         exitwhen i >= GetBJMaxPlayers()
         if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
-            call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|bot|" + I2S(i) + "|" + I2S(llmHuman) + "|" + I2S(GetHandleId(GetPlayerRace(Player(i)))) + "||0|" + I2S(i) + "|-1|" + LLMEncode(GetPlayerName(Player(i))) + "|")
+            call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|bot|" + I2S(i) + "|" + I2S(llmHuman) + "|" + I2S(GetHandleId(GetPlayerRace(Player(i)))) + "||0|" + I2S(i) + "|-1|" + LLMEncode(GetPlayerName(Player(i))) + "|" + LLMAllies(i))
         endif
         set i = i + 1
     endloop
     set i = first
     loop
         exitwhen i > llmSeq
-        call Preload(llmRecords[ModuloInteger(i, 64)])
+        call Preload(llmRecords[ModuloInteger(i, 256)])
         set i = i + 1
     endloop
     call PreloadGenEnd("AMAI-LLM\\events.pld")
@@ -158,13 +402,16 @@ function LLMSetEnabled takes boolean enabled returns nothing
         set llmSeq = 0
         set llmTick = 0
         set llmLastReply = 0
+        set llmLastVisible = 0
+        set llmInputChannel = "auto"
+        call FlushParentHashtable(llmCache)
         set llmActive = true
         call LLMRecord("hello", -1, 0, "", 0, llmHuman, -1, "local-melee", GetPlayerName(Player(llmHuman)))
         set i = 0
         loop
             exitwhen i >= GetBJMaxPlayers()
             if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
-                call LLMRecord("bot", i, GetHandleId(GetPlayerRace(Player(i))), "", 0, i, -1, GetPlayerName(Player(i)), "")
+                call LLMRecord("bot", i, GetHandleId(GetPlayerRace(Player(i))), "", 0, i, -1, GetPlayerName(Player(i)), LLMAllies(i))
                 call CommandAI(Player(i), 94, 1)
             endif
             set i = i + 1
@@ -194,8 +441,11 @@ function LLMOnChat takes nothing returns nothing
         call LLMSetEnabled(true)
     elseif text == "-llm off" then
         call LLMSetEnabled(false)
+    elseif text == "-llm team" or text == "-llm all" or text == "-llm auto" then
+        set llmInputChannel = SubString(text, 5, StringLength(text))
+        call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM input channel: " + llmInputChannel)
     elseif llmActive and GetPlayerId(GetTriggerPlayer()) == llmHuman and SubString(text, 0, 1) != "-" then
-        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "")
+        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + llmInputChannel)
     endif
 endfunction
 
@@ -220,7 +470,7 @@ function LLMOnHero takes nothing returns nothing
     loop
         exitwhen i >= GetBJMaxPlayers()
         if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
-            if owner == i or k == i or (owner == llmHuman and IsUnitVisible(u, Player(i))) then
+            if owner == i or k == i or IsUnitVisible(u, Player(i)) or (IsPlayerAlly(Player(i), Player(owner)) and IsPlayerAlly(Player(owner), Player(i))) then
                 call LLMRecord(kind, i, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, k, GetHeroProperName(u), "")
             endif
         endif
@@ -230,22 +480,51 @@ function LLMOnHero takes nothing returns nothing
     set killer = null
 endfunction
 
+function LLMAutoStart takes nothing returns nothing
+    call DestroyTimer(GetExpiredTimer())
+    call LLMSetEnabled(true)
+endfunction
+
+function LLMStartAfterMelee takes nothing returns nothing
+    call TimerStart(CreateTimer(), 4.0, false, function LLMAutoStart)
+endfunction
+
 function LLMInit takes nothing returns nothing
     local trigger chat = CreateTrigger()
     local trigger hero = CreateTrigger()
+    local trigger telemetry = CreateTrigger()
     local integer i = 0
     set llmClock = CreateTimer()
     set llmPoll = CreateTimer()
+    set llmCache = InitHashtable()
     call TimerStart(llmClock, 86400, false, null)
     loop
         exitwhen i >= GetBJMaxPlayers()
         call TriggerRegisterPlayerChatEvent(chat, Player(i), "", false)
         call TriggerRegisterPlayerUnitEvent(hero, Player(i), EVENT_PLAYER_UNIT_DEATH, null)
         call TriggerRegisterPlayerUnitEvent(hero, Player(i), EVENT_PLAYER_HERO_REVIVE_FINISH, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_CONSTRUCT_START, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_CONSTRUCT_FINISH, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_CONSTRUCT_CANCEL, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_UPGRADE_START, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_UPGRADE_FINISH, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_UPGRADE_CANCEL, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_RESEARCH_FINISH, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_HERO_LEVEL, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_HERO_SKILL, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_ISSUED_POINT_ORDER, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_PICKUP_ITEM, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_DROP_ITEM, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_USE_ITEM, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_SELL_ITEM, null)
+        call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_PAWN_ITEM, null)
         set i = i + 1
     endloop
     call TriggerAddAction(chat, function LLMOnChat)
+    call TriggerRegisterPlayerUnitEvent(telemetry, Player(PLAYER_NEUTRAL_PASSIVE), EVENT_PLAYER_UNIT_SELL_ITEM, null)
     call TriggerAddAction(hero, function LLMOnHero)
+    call TriggerAddAction(telemetry, function LLMOnTelemetry)
     set chat = null
     set hero = null
+    set telemetry = null
 endfunction

@@ -15,11 +15,12 @@ export class Scheduler {
   add(event, now, age = 0) {
     if (!this.session) this.session = event.session;
     if (event.session !== this.session) return;
-    const ttl = event.kind === 'chat' ? this.config.chatTtlMs : this.config.eventTtlMs;
+    const ttl = ['chat', 'bot-chat'].includes(event.kind) ? this.config.chatTtlMs : this.config.eventTtlMs;
     const entry = { ...event, expires: now + ttl - age };
     if (entry.expires <= now) return;
     this.queue.push(entry);
-    this.queue.sort((a, b) => Number(b.kind === 'chat') - Number(a.kind === 'chat') || a.seq - b.seq);
+    const priority = e => e.kind === 'chat' ? 2 : e.kind === 'bot-chat' ? 1 : 0;
+    this.queue.sort((a, b) => priority(b) - priority(a) || a.seq - b.seq);
     if (this.queue.length > 3) this.queue.pop();
   }
   take(now) {

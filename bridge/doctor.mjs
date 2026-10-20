@@ -7,7 +7,7 @@ const client = new CodexClient(config, (kind, value) => console.log(kind, JSON.s
 try {
   await client.start();
   if (process.argv.includes('--sample')) {
-    const fixture = { session: '123456789', seq: 2, kind: 'death', bot: 1, human: 0, owner: 0, killer: 1, unitName: 'Рыцарь смерти', level: 3, text: 'Тестовый герой' };
+    const fixture = { session: '123456789', seq: 2, kind: 'death', bot: 1, human: 0, owner: 0, killer: 1, unitName: 'Рыцарь смерти', level: 3, text: 'Тестовый герой', audience: [{ slot: 0, name: 'Игрок', relation: 'enemy' }] };
     console.log('SYNTHETIC_FIXTURE_REPLY', await client.generate(fixture, { ...personas[0], slot: 1, name: 'AMAI-Test' }, []));
   }
 } catch (error) { console.error(error.message); process.exitCode = 1; }

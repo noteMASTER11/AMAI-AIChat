@@ -73,4 +73,5 @@ function MeleeStartingAI takes nothing returns nothing
         set index = index + 1
         exitwhen index == GetBJMaxPlayers()
     endloop
+    call ExecuteFunc("LLMStartAfterMelee")
 endfunction

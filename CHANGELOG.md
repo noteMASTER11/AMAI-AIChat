@@ -10,10 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Design specification for local Russian-language LLM bot chat through Codex App Server.
 - Experimental opt-in local JASS event collector and Codex App Server bridge using GPT-6.1 Sol with low reasoning effort, per-bot Russian personalities, bounded scheduling, and a separate transport probe map builder.
 - Reversible installation, protocol/process self-checks and Russian local setup instructions.
+- Local React monitoring console with live SSE telemetry, conversations, request timing, authoritative token usage, delivery acknowledgements, queue, JSON inspection and export.
+- Bridge health snapshots and one-shot global installation after Warcraft III exits.
 
 ### Changed
 
 - While LLM chat is enabled, AMAI template conversations and pending chat lines are muted; Commander responses remain available.
+- Local JASS melee matches enable the LLM collector automatically after AI startup. The separate probe map is optional.
 - Current bot roster is included outside the rolling event history; mixed-session snapshots are rejected, and reply deadlines are enforced across the file transport.
 
 ## [3.7.0] - 2026-09-18
