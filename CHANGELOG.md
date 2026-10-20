@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [Unreleased]
+
+### Added
+
+- Design specification for local Russian-language LLM bot chat through Codex App Server. Runtime integration is not implemented yet.
+
 ## [3.7.0] - 2026-09-18
 
 ### Added
