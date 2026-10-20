@@ -7,7 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Added
 
-- Design specification for local Russian-language LLM bot chat through Codex App Server. Runtime integration is not implemented yet.
+- Design specification for local Russian-language LLM bot chat through Codex App Server.
+- Experimental opt-in local JASS event collector and Codex App Server bridge using GPT-6.1 Sol with low reasoning effort, per-bot Russian personalities, bounded scheduling, and a separate transport probe map builder.
+- Reversible installation, protocol/process self-checks and Russian local setup instructions.
+
+### Changed
+
+- While LLM chat is enabled, AMAI template conversations and pending chat lines are muted; Commander responses remain available.
 
 ## [3.7.0] - 2026-09-18
 

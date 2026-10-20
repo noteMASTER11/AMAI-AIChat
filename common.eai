@@ -291,6 +291,7 @@ globals
     real harass_radius_flee_ranged = 1200  // how far away from ranged enemy units harassing units turn and flee
     real harass_radius_flee_melee = 800  // how far away from melee enemy units harassing units turn and flee  
     boolean chatting	= true  // set to false to turn off computer taunts and chatting (Can still talk in observer mode)
+    boolean llm_chat_enabled = false
     real full_threat_distance = 600  // a enemy army within this distance is counted as a full threat
     real no_threat_distance = 3000  // a enemy army outside this distance is counted as no threat
     real distance_threat_exponent = 0.8  // how fast the threat increases as the enemy army gets from the no_threat_distance to the full_threat_distance
@@ -1730,7 +1731,7 @@ endfunction
 
 //============================================================================
 function DisplayToAlliesChat takes string s returns nothing
-  if chatting then
+  if chatting and not llm_chat_enabled then
     if IsPlayerAlly(ai_player,GetLocalPlayer()) then
       call DisplayTimedTextToPlayer(GetLocalPlayer(),0,0,15,message_add+s)
       call StartSound(chatSound)
@@ -1740,7 +1741,7 @@ endfunction
 
 //============================================================================
 function DisplayToEnemyChat takes string s returns nothing
-  if chatting then
+  if chatting and not llm_chat_enabled then
     if IsPlayerEnemy(ai_player,GetLocalPlayer()) then
       call DisplayTimedTextToPlayer(GetLocalPlayer(),0,0,15,message_add+s)
       call StartSound(chatSound)
@@ -1760,7 +1761,7 @@ endfunction
 
 //============================================================================
 function DisplayToPlayer takes string s, player p, boolean important returns nothing
-  if p == GetLocalPlayer() then
+  if p == GetLocalPlayer() and not llm_chat_enabled then
     call DisplayTimedTextToPlayer(GetLocalPlayer(),0,0,15,message_add+s)
     if important then
       call StartSound(importantSound)
@@ -3423,7 +3424,7 @@ endfunction
 function Chat takes integer c returns nothing
   local real chance = 0
   local boolean immediate = false
-  if campaign_ai or player_defeated then
+  if campaign_ai or player_defeated or llm_chat_enabled then
     return
   endif
 
@@ -8714,7 +8715,13 @@ endfunction
 
 //============================================================================
 function cmd_misc takes integer cmd, integer data returns nothing
-  if cmd == 50 then	// Triggering chat
+  if cmd == 94 then // LLM chat owns all conversational messages while enabled.
+    set llm_chat_enabled = data == 1
+    if llm_chat_enabled then
+      set chat_queue_size = -1
+      set chat_strategy = null
+    endif
+  elseif cmd == 50 then	// Triggering chat
     set chatting = not chatting
 
   elseif cmd == 51 then	// Triggering debug

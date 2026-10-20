@@ -1,0 +1,9 @@
+    boolean llmActive = false
+    integer llmHuman = -1
+    integer llmSeq = 0
+    integer llmTick = 0
+    integer llmLastReply = 0
+    string llmSession = ""
+    string array llmRecords
+    timer llmClock = null
+    timer llmPoll = null

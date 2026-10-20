@@ -1,0 +1,11 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "low",
+  "runtime": "D:\\ChatGPT\\Cache\\AMAI-LLM",
+  "mailbox": "D:\\ChatGPT\\Projects\\AMAI-LLM-Chat\\runtime\\mailbox",
+  "timeoutMs": 20000,
+  "globalCooldownMs": 8000,
+  "botCooldownMs": 20000,
+  "eventTtlMs": 20000,
+  "chatTtlMs": 45000
+}

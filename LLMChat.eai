@@ -1,0 +1,239 @@
+// Local-only, explicitly enabled by the human with -llm on.
+// Unique incoming filenames avoid caching a previous preload script.
+function LLMEncode takes string s returns string
+    local integer i = 0
+    local string c
+    local string result = ""
+    loop
+        exitwhen i >= StringLength(s)
+        set c = SubString(s, i, i + 1)
+        if c == "%" then
+            set result = result + "%25"
+        elseif c == "|" then
+            set result = result + "%7C"
+        elseif c == "\"" then
+            set result = result + "%22"
+        elseif c == "\\" then
+            set result = result + "%5C"
+        elseif c == "\n" then
+            set result = result + "%0A"
+        elseif c == "\r" then
+            set result = result + "%0D"
+        else
+            set result = result + c
+        endif
+        set i = i + 1
+    endloop
+    return result
+endfunction
+
+function LLMRecord takes string kind, integer bot, integer unitType, string unitName, integer level, integer owner, integer killer, string text, string extra returns nothing
+    set llmSeq = llmSeq + 1
+    set llmRecords[ModuloInteger(llmSeq, 64)] = "AMAI1|" + llmSession + "|" + I2S(llmSeq) + "|" + R2S(TimerGetElapsed(llmClock)) + "|" + kind + "|" + I2S(bot) + "|" + I2S(llmHuman) + "|" + I2S(unitType) + "|" + LLMEncode(unitName) + "|" + I2S(level) + "|" + I2S(owner) + "|" + I2S(killer) + "|" + LLMEncode(text) + "|" + LLMEncode(extra)
+endfunction
+
+function LLMField takes string s, integer field returns string
+    local integer i = 0
+    local integer start = 0
+    local integer current = 0
+    loop
+        exitwhen i >= StringLength(s)
+        if SubString(s, i, i + 1) == "|" then
+            if current == field then
+                return SubString(s, start, i)
+            endif
+            set current = current + 1
+            set start = i + 1
+        endif
+        set i = i + 1
+    endloop
+    if current == field then
+        return SubString(s, start, i)
+    endif
+    return ""
+endfunction
+
+function LLMColor takes player p returns string
+    local playercolor c = GetPlayerColor(p)
+    if c == PLAYER_COLOR_RED then
+        return "ff0303"
+    elseif c == PLAYER_COLOR_BLUE then
+        return "0042ff"
+    elseif c == PLAYER_COLOR_CYAN then
+        return "1ce6b9"
+    elseif c == PLAYER_COLOR_PURPLE then
+        return "540081"
+    elseif c == PLAYER_COLOR_YELLOW then
+        return "fffc01"
+    elseif c == PLAYER_COLOR_ORANGE then
+        return "fe8a0e"
+    elseif c == PLAYER_COLOR_GREEN then
+        return "20c000"
+    elseif c == PLAYER_COLOR_PINK then
+        return "e55bb0"
+    elseif c == PLAYER_COLOR_LIGHT_GRAY then
+        return "959697"
+    elseif c == PLAYER_COLOR_LIGHT_BLUE then
+        return "7ebff1"
+    elseif c == PLAYER_COLOR_AQUA then
+        return "106246"
+    elseif c == PLAYER_COLOR_BROWN then
+        return "4e2a04"
+    endif
+    return "ffcc00"
+endfunction
+
+function LLMPoll takes nothing returns nothing
+    local integer first = llmSeq - 63
+    local integer i
+    local integer seq
+    local integer bot
+    local string original
+    local string incoming
+    local string text
+    if not llmActive then
+        return
+    endif
+    set llmTick = llmTick + 1
+    set original = BlzGetAbilityTooltip('Amls', 0)
+    call BlzSetAbilityTooltip('Amls', "", 0)
+    call Preloader("AMAI-LLM\\reply-" + llmSession + "-" + I2S(llmTick) + ".pld")
+    set incoming = BlzGetAbilityTooltip('Amls', 0)
+    call BlzSetAbilityTooltip('Amls', original, 0)
+    if LLMField(incoming, 0) == llmSession then
+        set seq = S2I(LLMField(incoming, 1))
+        set bot = S2I(LLMField(incoming, 2))
+        set text = LLMField(incoming, 3)
+        if seq > llmLastReply and seq <= llmSeq and bot >= 0 and bot < GetBJMaxPlayers() then
+            if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and text != "" then
+                call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 15, "|cff" + LLMColor(Player(bot)) + GetPlayerName(Player(bot)) + "|r: " + text)
+                set llmLastReply = seq
+            endif
+        endif
+    endif
+    if first < 1 then
+        set first = 1
+    endif
+    call PreloadGenClear()
+    call PreloadGenStart()
+    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "||0|-1|-1||" + I2S(llmLastReply))
+    set i = first
+    loop
+        exitwhen i > llmSeq
+        call Preload(llmRecords[ModuloInteger(i, 64)])
+        set i = i + 1
+    endloop
+    call PreloadGenEnd("AMAI-LLM\\events.pld")
+endfunction
+
+function LLMSetEnabled takes boolean enabled returns nothing
+    local integer i = 0
+    local integer humans = 0
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_USER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
+            set humans = humans + 1
+            set llmHuman = i
+        endif
+        set i = i + 1
+    endloop
+    if humans != 1 or llmHuman != GetPlayerId(GetLocalPlayer()) then
+        call DisplayTimedTextToPlayer(GetLocalPlayer(), 0, 0, 10, "AMAI LLM: local single-human matches only.")
+        return
+    endif
+    if enabled and not llmActive then
+        set llmSession = I2S(GetRandomInt(100000, 999999)) + I2S(GetRandomInt(100000, 999999))
+        set llmSeq = 0
+        set llmTick = 0
+        set llmLastReply = 0
+        set llmActive = true
+        call LLMRecord("hello", -1, 0, "", 0, llmHuman, -1, "local-melee", GetPlayerName(Player(llmHuman)))
+        set i = 0
+        loop
+            exitwhen i >= GetBJMaxPlayers()
+            if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
+                call LLMRecord("bot", i, GetHandleId(GetPlayerRace(Player(i))), "", 0, i, -1, GetPlayerName(Player(i)), "")
+                call CommandAI(Player(i), 94, 1)
+            endif
+            set i = i + 1
+        endloop
+        call TimerStart(llmPoll, 0.5, true, function LLMPoll)
+        call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM: ON. Start the bridge; type a message to talk.")
+    elseif not enabled and llmActive then
+        call LLMRecord("off", -1, 0, "", 0, llmHuman, -1, "", "")
+        call LLMPoll()
+        set llmActive = false
+        call PauseTimer(llmPoll)
+        set i = 0
+        loop
+            exitwhen i >= GetBJMaxPlayers()
+            if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER then
+                call CommandAI(Player(i), 94, 0)
+            endif
+            set i = i + 1
+        endloop
+        call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM: OFF.")
+    endif
+endfunction
+
+function LLMOnChat takes nothing returns nothing
+    local string text = GetEventPlayerChatString()
+    if text == "-llm on" then
+        call LLMSetEnabled(true)
+    elseif text == "-llm off" then
+        call LLMSetEnabled(false)
+    elseif llmActive and GetPlayerId(GetTriggerPlayer()) == llmHuman and SubString(text, 0, 1) != "-" then
+        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "")
+    endif
+endfunction
+
+function LLMOnHero takes nothing returns nothing
+    local unit u = GetTriggerUnit()
+    local unit killer = GetKillingUnit()
+    local integer owner = GetPlayerId(GetOwningPlayer(u))
+    local integer k = -1
+    local integer i = 0
+    local string kind = "death"
+    if not llmActive or not IsUnitType(u, UNIT_TYPE_HERO) then
+        set u = null
+        set killer = null
+        return
+    endif
+    if killer != null then
+        set k = GetPlayerId(GetOwningPlayer(killer))
+    endif
+    if GetTriggerEventId() == EVENT_PLAYER_HERO_REVIVE_FINISH then
+        set kind = "revive"
+    endif
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
+            if owner == i or k == i or (owner == llmHuman and IsUnitVisible(u, Player(i))) then
+                call LLMRecord(kind, i, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, k, GetHeroProperName(u), "")
+            endif
+        endif
+        set i = i + 1
+    endloop
+    set u = null
+    set killer = null
+endfunction
+
+function LLMInit takes nothing returns nothing
+    local trigger chat = CreateTrigger()
+    local trigger hero = CreateTrigger()
+    local integer i = 0
+    set llmClock = CreateTimer()
+    set llmPoll = CreateTimer()
+    call TimerStart(llmClock, 86400, false, null)
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        call TriggerRegisterPlayerChatEvent(chat, Player(i), "", false)
+        call TriggerRegisterPlayerUnitEvent(hero, Player(i), EVENT_PLAYER_UNIT_DEATH, null)
+        call TriggerRegisterPlayerUnitEvent(hero, Player(i), EVENT_PLAYER_HERO_REVIVE_FINISH, null)
+        set i = i + 1
+    endloop
+    call TriggerAddAction(chat, function LLMOnChat)
+    call TriggerAddAction(hero, function LLMOnHero)
+    set chat = null
+    set hero = null
+endfunction

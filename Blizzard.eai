@@ -164,6 +164,7 @@
     trigger array dlg_trigger
     trigger array last_tribute_trigger
     
+#INCLUDE <LLMChatGlobals.eai>
 #DEFINE GLOBAL    
 #INCLUDESCRIPT <$VER$\custom_common.eai>
 #UNDEF GLOBAL
@@ -171,6 +172,7 @@
 #INCLUDESCRIPT <$VER$\custom_common.eai>
 #INCLUDE <$VER$\tmp\Blizzard3Gen.j>
 #INCLUDE <$VER$\tmp\Blizzard4.j>
+#INCLUDE <LLMChat.eai>
 
 function DestroyLastTrigger takes trigger t, triggeraction ta returns nothing
   if (ta != null and t != null) then
@@ -2016,4 +2018,5 @@ endfunction
     call InitHCL()
     call InitCommander()
     call InitZoom()
+    call LLMInit()
 #INCLUDE <$VER$\tmp\Blizzard6.j>
