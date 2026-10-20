@@ -1,7 +1,18 @@
+import { unlink } from 'node:fs/promises';
+
 const sessionPattern = /^\d{6,18}$/;
 const kinds = new Set(['hello', 'tick', 'bot', 'chat', 'death', 'revive', 'off']);
 const decode = s => s.replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-
+export function replyWindow(event, tick, now, delayMs) {
+  if (!Number.isFinite(event.expires) || event.expires <= now + delayMs) throw new Error('Reply expired before its game poll');
+  return { expiresAt: event.expires, gameDeadline: tick.time + (event.expires - tick.wall) / 1000 };
+}
+export async function expireReplies(pending, now) {
+  for (const [filename, deadline] of pending) if (deadline <= now) {
+    await unlink(filename).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    pending.delete(filename);
+  }
+}
 export function parseEvents(text) {
   if (typeof text !== 'string' || Buffer.byteLength(text) > 262144) return [];
   const result = [];
@@ -20,9 +31,9 @@ export function cleanText(text) {
   return [...String(text).replace(/\|c[0-9a-f]{8}/gi, '').replace(/\|[rn]/gi, ' ').replace(/[\x00-\x1f\x7f|]/g, ' ').replace(/\s+/g, ' ').trim()].slice(0, 180).join('');
 }
 
-export function makeReply(session, seq, bot, text) {
-  if (!sessionPattern.test(session) || !Number.isSafeInteger(seq) || seq < 1 || !Number.isSafeInteger(bot) || bot < 0 || bot > 23) throw new Error('Invalid reply identity');
-  const payload = `${session}|${seq}|${bot}|${cleanText(text)}`.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+export function makeReply(session, seq, bot, text, deadline, token = seq) {
+  if (!sessionPattern.test(session) || !Number.isSafeInteger(seq) || seq < 1 || !Number.isSafeInteger(token) || token < 1 || !Number.isSafeInteger(bot) || bot < 0 || bot > 23 || !Number.isFinite(deadline) || deadline <= 0) throw new Error('Invalid reply identity/deadline');
+  const payload = `${session}|${token}|${bot}|${deadline}|${cleanText(text)}|${seq}`.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
   return `function PreloadFiles takes nothing returns nothing\ncall BlzSetAbilityTooltip(1097690227, "${payload}", 0)\nendfunction\n`;
 }
 
@@ -31,6 +42,8 @@ export class Inbox {
   last = 0;
   retired = new Set();
   accept(events) {
+    const heartbeats = events.filter(e => e.kind === 'tick');
+    if (heartbeats.length !== 1 || events.some(e => e.session !== heartbeats[0].session)) return [];
     const out = [];
     for (const event of events) {
       if (this.retired.has(event.session)) continue;
@@ -39,7 +52,7 @@ export class Inbox {
         this.session = event.session;
         this.last = 0;
       }
-      if (event.kind === 'tick') { out.push(event); continue; }
+      if (event.kind === 'tick' || (event.kind === 'bot' && event.seq === 0)) { out.push(event); continue; }
       if (event.seq <= this.last) continue;
       this.last = event.seq;
       out.push(event);

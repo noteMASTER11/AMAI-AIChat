@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseEvents, makeReply, cleanText, Inbox } from './protocol.mjs';
+import { parseEvents, makeReply, cleanText, Inbox, replyWindow, expireReplies } from './protocol.mjs';
 import { JsonRpc, validateAnswer } from './codex.mjs';
 import { PassThrough } from 'node:stream';
 import { Scheduler } from './scheduler.mjs';
@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const record = (seq, text = 'Привет%7C%22ДК%22%5C') => `\tcall Preload( "AMAI1|123456789|${seq}|12.50|chat|1|0|0||0|0|-1|${text}|" )\r\n`;
+const snapshotEvents = records => [{ ...records[0], seq: 0, kind: 'tick' }, ...records];
 test('complete bounded snapshots preserve Cyrillic, quotes, slashes and delimiters', () => {
   assert.deepEqual(parseEvents(record(2))[0].text, 'Привет|"ДК"\\');
   assert.deepEqual(parseEvents(record(2).slice(0, -8)), []);
@@ -18,18 +19,18 @@ test('complete bounded snapshots preserve Cyrillic, quotes, slashes and delimite
 });
 test('inbox rejects duplicate records, retired sessions and malformed records', () => {
   const inbox = new Inbox();
-  assert.equal(inbox.accept(parseEvents(record(1))).length, 1);
-  assert.equal(inbox.accept(parseEvents(record(1))).length, 0);
-  assert.equal(inbox.accept(parseEvents(record(2).replace('123456789', '555555555'))).length, 1);
-  assert.equal(inbox.accept(parseEvents(record(3))).length, 0);
+  assert.equal(inbox.accept(snapshotEvents(parseEvents(record(1)))).filter(e => e.kind !== 'tick').length, 1);
+  assert.equal(inbox.accept(snapshotEvents(parseEvents(record(1)))).filter(e => e.kind !== 'tick').length, 0);
+  assert.equal(inbox.accept(snapshotEvents(parseEvents(record(2).replace('123456789', '555555555')))).filter(e => e.kind !== 'tick').length, 1);
+  assert.equal(inbox.accept(snapshotEvents(parseEvents(record(3)))).length, 0);
 });
 test('reply wrapper cannot turn hostile text into JASS or Warcraft markup', () => {
-  const reply = makeReply('123456789', 2, 1, 'ДК "\\\nendfunction |cffff0000привет|r');
+  const reply = makeReply('123456789', 2, 1, 'ДК "\\\nendfunction |cffff0000привет|r', 50);
   assert.equal(reply.split('\n').length, 4);
   assert.ok(reply.includes('\\"'));
   assert.ok(!reply.includes('|cffff0000'));
   assert.equal([...cleanText('я'.repeat(200))].length, 180);
-  assert.throws(() => makeReply('../x', 2, 1, 'нет'));
+  assert.throws(() => makeReply('../x', 2, 1, 'нет', 50));
 });
 
 test('JSON-RPC rejects server errors, timeouts and exited processes', async () => {
@@ -90,6 +91,47 @@ test('prioritized newer reply retires older queued comments', () => {
   assert.equal(s.queue.length, 0);
 });
 
+test('restart recovers a current roster after initial bot events roll out of history', () => {
+  const inbox = new Inbox();
+  const records = snapshotEvents([{ ...event(0, 'bot'), text: 'Current bot' }, event(100)]);
+  assert.equal(inbox.accept(records).filter(e => e.kind === 'bot').length, 1);
+  assert.equal(inbox.accept(records).filter(e => e.kind === 'bot').length, 1);
+});
+
+test('foreign records reject a whole snapshot without retiring the real session', () => {
+  const inbox = new Inbox();
+  inbox.accept(snapshotEvents([event(1)]));
+  assert.deepEqual(inbox.accept(snapshotEvents([event(2), { ...event(3), session: '555555555' }])), []);
+  assert.equal(inbox.session, '123456789');
+  assert.equal(inbox.accept(snapshotEvents([event(4)])).at(-1).seq, 4);
+  assert.deepEqual(inbox.accept([{ ...event(5), session: '555555555' }]), []);
+});
+
+test('transport reserves poll delay and encodes a display deadline', () => {
+  const tick = { time: 10, wall: 100000 };
+  assert.throws(() => replyWindow({ expires: 101999 }, tick, 100000, 2000), /expired/);
+  assert.deepEqual(replyWindow({ expires: 110000 }, tick, 100000, 2000), { expiresAt: 110000, gameDeadline: 20 });
+  assert.match(makeReply('123456789', 1, 1, 'ДК', 20), /123456789\|1\|1\|20\|ДК/);
+  assert.match(makeReply('123456789', 2, 1, 'ДК', 20, 5), /123456789\|5\|1\|20\|ДК\|2/);
+});
+
+test('wall-clock expiry removes a pending file even when game polls are paused', async () => {
+  const root = await mkdtemp('D:/ChatGPT/Temp/amai-test-');
+  const filename = path.join(root, 'reply.pld');
+  try {
+    await writeFile(filename, 'pending reply');
+    const pending = new Map([[filename, 101000]]);
+    await expireReplies(pending, 100999);
+    await access(filename);
+    await expireReplies(pending, 101000);
+    await assert.rejects(access(filename));
+    assert.equal(pending.size, 0);
+  } finally {
+    assert.ok(path.resolve(root).toLowerCase().startsWith(path.resolve('D:/ChatGPT/Temp/amai-test-').toLowerCase()));
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('bridge loopback waits for acknowledgement and exits cleanly (simulated game files)', { timeout: 15000 }, async () => {
   const root = await mkdtemp('D:/ChatGPT/Temp/amai-test-');
   const mailbox = path.join(root, 'mailbox');
@@ -101,7 +143,7 @@ test('bridge loopback waits for acknowledgement and exits cleanly (simulated gam
   const exited = new Promise(resolve => child.once('exit', resolve));
   const snapshot = (tick, ack) => `function PreloadFiles takes nothing returns nothing\ncall Preload( "AMAI1|123456789|0|10|tick|-1|0|${tick}||0|-1|-1||${ack}" )\ncall Preload( "AMAI1|123456789|1|9|hello|-1|0|0||0|0|-1|test|User" )\ncall Preload( "AMAI1|123456789|2|9|bot|1|0|0||0|1|-1|Bot|" )\nendfunction\n`;
   try {
-    await writeFile(path.join(mailbox, 'events.pld'), snapshot(1, 0));
+    await writeFile(path.join(mailbox, 'events.pld'), snapshot(1, 2));
     let filename;
     for (let i = 0; i < 50; i++) {
       filename = (await readdir(mailbox)).find(n => /^reply-/.test(n));
@@ -111,12 +153,16 @@ test('bridge loopback waits for acknowledgement and exits cleanly (simulated gam
     assert.ok(filename, output);
     assert.match(await readFile(path.join(mailbox, filename), 'utf8'), /Проверка моста/);
     await assert.rejects(access(path.join(runtime, 'transport-verified.json')));
-    await writeFile(path.join(mailbox, 'events.pld'), snapshot(5, 2));
+    // Acknowledgement from a previous bridge must not validate this probe.
+    await writeFile(path.join(mailbox, 'events.pld'), snapshot(3, 2));
+    await sleep(300);
+    await assert.rejects(access(path.join(runtime, 'transport-verified.json')));
+    await writeFile(path.join(mailbox, 'events.pld'), snapshot(5, 5));
     const code = await Promise.race([exited, sleep(7000, undefined, { ref: false }).then(() => 'timeout')]);
     assert.equal(code, 0, output);
     const proof = JSON.parse(await readFile(path.join(runtime, 'transport-verified.json'), 'utf8'));
     assert.equal(proof.session, '123456789');
-    assert.equal(proof.seq, 2);
+    assert.equal(proof.seq, 5);
     await assert.rejects(access(path.join(mailbox, 'bridge.lock')));
   } finally {
     if (child.exitCode == null) child.kill();

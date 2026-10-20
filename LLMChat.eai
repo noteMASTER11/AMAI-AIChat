@@ -87,6 +87,7 @@ function LLMPoll takes nothing returns nothing
     local integer first = llmSeq - 63
     local integer i
     local integer seq
+    local integer eventSeq
     local integer bot
     local string original
     local string incoming
@@ -102,9 +103,10 @@ function LLMPoll takes nothing returns nothing
     call BlzSetAbilityTooltip('Amls', original, 0)
     if LLMField(incoming, 0) == llmSession then
         set seq = S2I(LLMField(incoming, 1))
+        set eventSeq = S2I(LLMField(incoming, 5))
         set bot = S2I(LLMField(incoming, 2))
-        set text = LLMField(incoming, 3)
-        if seq > llmLastReply and seq <= llmSeq and bot >= 0 and bot < GetBJMaxPlayers() then
+        set text = LLMField(incoming, 4)
+        if seq == llmTick and seq > llmLastReply and eventSeq > 0 and eventSeq <= llmSeq and bot >= 0 and bot < GetBJMaxPlayers() and TimerGetElapsed(llmClock) <= S2R(LLMField(incoming, 3)) then
             if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and text != "" then
                 call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 15, "|cff" + LLMColor(Player(bot)) + GetPlayerName(Player(bot)) + "|r: " + text)
                 set llmLastReply = seq
@@ -116,7 +118,17 @@ function LLMPoll takes nothing returns nothing
     endif
     call PreloadGenClear()
     call PreloadGenStart()
-    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "||0|-1|-1||" + I2S(llmLastReply))
+    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v1|0|-1|-1||" + I2S(llmLastReply))
+    // Roster snapshots live outside the 64-event history, so a bridge can
+    // reconnect at any point in the match without losing bot identities.
+    set i = 0
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING then
+            call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|bot|" + I2S(i) + "|" + I2S(llmHuman) + "|" + I2S(GetHandleId(GetPlayerRace(Player(i)))) + "||0|" + I2S(i) + "|-1|" + LLMEncode(GetPlayerName(Player(i))) + "|")
+        endif
+        set i = i + 1
+    endloop
     set i = first
     loop
         exitwhen i > llmSeq

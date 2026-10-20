@@ -44,7 +44,17 @@ script = script.replace(/call InitGlobals\([^\n]*/, '$&\n    call ProbeLLMInit()
 const sourceFile = path.join(repo, 'runtime/probe-war3map.j');
 fs.writeFileSync(sourceFile, script);
 try {
+  if (archive.SFileGetMaxFileCount() < 128) archive.SFileSetMaxFileCount(128);
   archive.SFileAddFileEx(sourceFile, 'war3map.j', 0x80000200, 2, 2);
+  // Use the same supported per-map AI placement as InstallToDir.pl, so the
+  // probe includes the new template-muting command without a global install.
+  for (const name of ['common.ai', 'human.ai', 'orc.ai', 'elf.ai', 'undead.ai']) {
+    const local = path.join(repo, 'Scripts/REFORGED', name);
+    archive.SFileAddFileEx(local, `Scripts\\${name}`, 0x80000200, 2, 2);
+    const file = archive.SFileOpenFileEx(`Scripts\\${name}`, 0);
+    try { if (!file.readFileAll().equals(fs.readFileSync(local))) throw new Error(`Embedded AI verification failed: ${name}`); }
+    finally { file.SFileCloseFile(); }
+  }
   const mapInfo = archive.SFileOpenFileEx('war3map.w3i', 0);
   const bytes = mapInfo.readFileAll(); mapInfo.SFileCloseFile();
   // Standard map header starts with format/editor metadata, then title.

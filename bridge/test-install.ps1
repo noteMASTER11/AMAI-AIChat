@@ -5,6 +5,7 @@ $game = Join-Path $fixture 'Game'
 $scripts = Join-Path $game '_retail_\Scripts'
 $state = Join-Path $fixture 'State'
 $verification = Join-Path $fixture 'Verification'
+$previousRuntime = $env:AMAI_RUNTIME
 New-Item -ItemType Directory -Path $scripts,$verification -Force | Out-Null
 $env:AMAI_RUNTIME = $verification
 @{ method = 'observed-game-ack'; session = '123456789'; seq = 2; game = '3.0.1' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $verification 'transport-verified.json')
@@ -26,6 +27,7 @@ try {
     if (-not $refused) { throw 'Restore overwrote an external modification.' }
     Write-Output 'PASS: fixture install, byte-exact restore, reinstall, modified-file refusal.'
 } finally {
+    if ($null -eq $previousRuntime) { Remove-Item Env:AMAI_RUNTIME -ErrorAction SilentlyContinue } else { $env:AMAI_RUNTIME = $previousRuntime }
     $resolved = [IO.Path]::GetFullPath($fixture)
     if (-not $resolved.StartsWith('D:\ChatGPT\Temp\amai-install-test-', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fixture cleanup target.' }
     Remove-Item -LiteralPath $resolved -Recurse -Force

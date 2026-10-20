@@ -2,7 +2,7 @@ import { readFile, writeFile, rename, mkdir, stat, readdir, unlink, open } from 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { parseEvents, makeReply, Inbox } from './protocol.mjs';
+import { parseEvents, makeReply, Inbox, replyWindow, expireReplies } from './protocol.mjs';
 import { Scheduler } from './scheduler.mjs';
 import { CodexClient } from './codex.mjs';
 
@@ -34,6 +34,7 @@ const inbox = new Inbox();
 const scheduler = new Scheduler(config);
 const client = new CodexClient(config, log);
 const bots = new Map();
+const pendingReplies = new Map();
 let history = [];
 let tick = null;
 let lastFile = '';
@@ -60,10 +61,13 @@ function chooseBot(text) {
 async function publish(event, bot, text) {
   if (!tick || event.session !== inbox.session || Date.now() - tick.wall > 3000) throw new Error('No live game heartbeat');
   const target = Math.max(tick.unitType + 4, publishedPoll + 1);
+  const window = replyWindow(event, tick, Date.now(), (target - tick.unitType) * 500);
   const filename = path.join(config.mailbox, `reply-${event.session}-${target}.pld`);
   const temporary = filename + '.tmp';
-  await writeFile(temporary, makeReply(event.session, event.seq, bot, text), 'utf8');
+  await writeFile(temporary, makeReply(event.session, event.seq, bot, text, window.gameDeadline, target), 'utf8');
   await rename(temporary, filename);
+  pendingReplies.set(filename, window.expiresAt);
+  setTimeout(() => expireReplies(pendingReplies, Date.now()).catch(error => log('expiry-error', error.message)), Math.max(1, window.expiresAt - Date.now())).unref();
   publishedPoll = target;
   log('reply-published', { session: event.session, seq: event.seq, bot, poll: target, text });
 }
@@ -91,6 +95,7 @@ try {
   log('instructions', 'In a new local melee match type -llm on. The bridge first verifies an in-game loopback; then LLM chat activates automatically.');
   while (running) {
     try {
+      await expireReplies(pendingReplies, Date.now());
       const filename = path.join(config.mailbox, 'events.pld');
       const info = await stat(filename);
       const fileKey = `${info.mtimeMs}:${info.size}`;
@@ -100,14 +105,19 @@ try {
         if (/endfunction\s*$/.test(raw)) {
           lastFile = fileKey;
           const parsed = parseEvents(raw);
-          const heartbeat = parsed.find(e => e.kind === 'tick');
+          const events = inbox.accept(parsed);
+          const heartbeat = events.find(e => e.kind === 'tick');
+          if (!heartbeat) tick = null;
           if (heartbeat) {
-            const events = inbox.accept(parsed);
             if (scheduler.session !== inbox.session) {
               scheduler.reset(inbox.session); bots.clear(); history = []; verified = false; probe = null; attempts = 0; publishedPoll = -1;
               log('game-session', inbox.session);
             }
             tick = { ...heartbeat, wall: info.mtimeMs };
+            if (heartbeat.unitName === 'roster-v1') {
+              const roster = new Set(events.filter(e => e.kind === 'bot' && e.seq === 0).map(e => e.bot));
+              for (const id of bots.keys()) if (!roster.has(id)) bots.delete(id);
+            }
             if (probe && Number(tick.extra) >= probe.seq) {
               verified = true;
               await writeFile(path.join(config.runtime, 'transport-verified.json'), JSON.stringify({ verifiedAt: new Date().toISOString(), session: inbox.session, seq: probe.seq, game: '3.0.1', method: 'observed-game-ack' }, null, 2));
@@ -116,7 +126,7 @@ try {
             }
             for (const event of events) {
               if (event.kind === 'tick') continue;
-              log('game-event', event);
+              if (event.kind !== 'bot' || event.seq !== 0) log('game-event', event);
               if (event.kind === 'off') { tick = null; scheduler.reset(null); bots.clear(); continue; }
               if (event.kind === 'bot') { bots.set(event.bot, { ...personas[event.bot % personas.length], slot: event.bot, name: event.text, race: event.unitType }); continue; }
               if (event.kind === 'hello') { history.push(event); continue; }
@@ -133,8 +143,8 @@ try {
       if (tick && !verified && bots.size && Date.now() - tick.wall < 3000 && (!probe || tick.unitType >= probe.poll + 4) && attempts < 3) {
         const bot = [...bots.keys()][0];
         // A fixed diagnostic, not a substitute for LLM conversations.
-        await publish({ session: inbox.session, seq: inbox.last }, bot, 'Проверка моста: «ДК», кавычки " и путь \\ работают.');
-        probe = { seq: inbox.last, poll: publishedPoll }; attempts++;
+        await publish({ session: inbox.session, seq: inbox.last, expires: Date.now() + 6000 }, bot, 'Проверка моста: «ДК», кавычки " и путь \\ работают.');
+        probe = { seq: publishedPoll, poll: publishedPoll }; attempts++;
       }
       if (verified && mode === 'llm' && !modelReady && Date.now() >= nextModelAttempt) {
         nextModelAttempt = Date.now() + 30000;
@@ -158,6 +168,7 @@ try {
     await sleep(200);
   }
 } finally {
+  await expireReplies(pendingReplies, Infinity);
   await client.close();
   if (generation) await generation;
   await logChain;
