@@ -936,6 +936,8 @@ globals
   integer llmTaskAction = 0
   integer llmTaskOwner = 0
   integer llmTaskSource = 0
+  integer llmTaskUnitType = 0
+  real llmTaskCooperation = 0.0
   real llmTaskX = 0
   real llmTaskY = 0
   real llmTaskExpires = 0

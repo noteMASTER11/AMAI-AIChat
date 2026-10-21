@@ -52,6 +52,11 @@ function LLMTaskReceive takes integer id returns nothing
   set llmTaskObserved = GetStoredReal(llmActionCache, key, "observed")
   set llmTaskOwner = owner
   set llmTaskSource = source
+  set llmTaskUnitType = GetStoredInteger(llmActionCache, key, "unit-type")
+  set llmTaskCooperation = 0.0
+  if allied then
+    set llmTaskCooperation = GetStoredReal(llmActionCache, key, "cooperation")
+  endif
   set break_attack = true
   call LLMTaskReport(id, 1, "validated")
 endfunction

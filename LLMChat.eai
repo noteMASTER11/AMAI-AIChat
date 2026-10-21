@@ -86,7 +86,7 @@ endfunction
 function LLMJournal takes player sender, string channel, string text returns nothing
     local integer seconds = ModuloInteger(R2I(TimerGetElapsed(llmClock)), 60)
     local string stamp = I2S(R2I(TimerGetElapsed(llmClock) / 60.0)) + ":"
-    local string label = "[ALL]"
+    local string label = "[CHAT]"
     if GetPlayerId(GetLocalPlayer()) != llmHuman or text == "" then
         return
     endif
@@ -94,7 +94,9 @@ function LLMJournal takes player sender, string channel, string text returns not
         set stamp = stamp + "0"
     endif
     set stamp = stamp + I2S(seconds)
-    if channel == "team" then
+    if channel == "all" then
+        set label = "[ALL]"
+    elseif channel == "team" then
         set label = "[TEAM]"
     endif
     if StringCase(SubString(text, 0, 5), false) == "@all " then
@@ -107,23 +109,7 @@ function LLMJournal takes player sender, string channel, string text returns not
     call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 0.01, "[" + stamp + "] " + label + " |cff" + LLMColor(sender) + GetPlayerName(sender) + "|r: " + text)
 endfunction
 
-function LLMChatChannel takes string text returns string
-    local integer i = 0
-    if StringCase(SubString(text, 0, 5), false) == "@all " or llmInputChannel == "all" then
-        return "all"
-    endif
-    if StringCase(SubString(text, 0, 6), false) == "@team " or llmInputChannel == "team" then
-        return "team"
-    endif
-    loop
-        exitwhen i >= GetBJMaxPlayers()
-        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING and IsPlayerAlly(Player(i), Player(llmHuman)) and IsPlayerAlly(Player(llmHuman), Player(i)) then
-            return "team"
-        endif
-        set i = i + 1
-    endloop
-    return "all"
-endfunction
+
 
 function LLMAllies takes integer bot returns string
     local integer i = 0
@@ -200,6 +186,46 @@ function LLMAbilities takes unit u returns string
     return result
 endfunction
 
+// Own roster only: the planner can request a real unit type without inspecting opponents.
+function LLMOwnForces takes integer bot returns nothing
+    local group g = CreateGroup()
+    local unit u
+    local integer id
+    local integer n = 0
+    local integer i = 0
+    local integer order
+    local integer array types
+    call FlushParentHashtable(llmForceCache)
+    call GroupEnumUnitsOfPlayer(g, Player(bot), null)
+    loop
+        set u = FirstOfGroup(g)
+        exitwhen u == null
+        call GroupRemoveUnit(g, u)
+        if not IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitType(u, UNIT_TYPE_DEAD) and GetUnitTypeId(u) != 0 then
+            set id = GetUnitTypeId(u)
+            if not HaveSavedInteger(llmForceCache, id, 0) and n < 40 then
+                set types[n] = id
+                set n = n + 1
+                call SaveStr(llmForceCache, id, 2, GetUnitName(u))
+            endif
+            call SaveInteger(llmForceCache, id, 0, LoadInteger(llmForceCache, id, 0) + 1)
+            set order = GetUnitCurrentOrder(u)
+            if order == OrderId("harvest") or order == OrderId("resumeharvesting") or order == OrderId("returnresources") then
+                call SaveInteger(llmForceCache, id, 1, LoadInteger(llmForceCache, id, 1) + 1)
+            endif
+        endif
+    endloop
+    loop
+        exitwhen i >= n
+        set id = types[i]
+        call LLMRecord("own-forces", bot, id, LoadStr(llmForceCache, id, 2), 0, bot, -1, "own unit roster", "count=" + I2S(LoadInteger(llmForceCache, id, 0)) + ";working=" + I2S(LoadInteger(llmForceCache, id, 1)))
+        set i = i + 1
+    endloop
+    call DestroyGroup(g)
+    set g = null
+    set u = null
+endfunction
+
 function LLMSample takes nothing returns nothing
     local group heroes = CreateGroup()
     local unit u
@@ -215,6 +241,8 @@ function LLMSample takes nothing returns nothing
     local string refresh
     local integer army
     local integer sightings
+    local integer site
+    local integer explored
     local real life
     local real maxlife
     local real homex
@@ -292,6 +320,23 @@ function LLMSample takes nothing returns nothing
                 set maxlife = 1
             endif
             call LLMRecord("self-state", owner, 0, "own home/state", 0, owner, -1, "private", "x=" + R2S(homex) + ";y=" + R2S(homey) + ";army=" + I2S(army) + ";health=" + R2S(life / maxlife) + ";gold=" + I2S(GetPlayerState(Player(owner), PLAYER_STATE_RESOURCE_GOLD)) + ";lumber=" + I2S(GetPlayerState(Player(owner), PLAYER_STATE_RESOURCE_LUMBER)) + ";unit=0")
+        endif
+        if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
+            call LLMOwnForces(owner)
+            if ModuloInteger(llmTick, 120) == 10 then
+                set site = 0
+                loop
+                    exitwhen site >= GetPlayers()
+                    set x = GetStartLocationX(site)
+                    set y = GetStartLocationY(site)
+                    set explored = 0
+                    if not IsMaskedToPlayer(x, y, Player(owner)) then
+                        set explored = 1
+                    endif
+                    call LLMRecord("map-site", owner, site, "public map start site", 0, 27, -1, "occupancy unknown", "x=" + R2S(x) + ";y=" + R2S(y) + ";site=" + I2S(site) + ";explored=" + I2S(explored))
+                    set site = site + 1
+                endloop
+            endif
         endif
         set owner = owner + 1
     endloop
@@ -391,6 +436,8 @@ function LLMActionPoll takes nothing returns nothing
     local integer source
     local integer owner
     local integer status
+    local integer requestedType
+    local real cooperation
     local real x
     local real y
     local real expires
@@ -412,6 +459,8 @@ function LLMActionPoll takes nothing returns nothing
         set source = S2I(LLMField(incoming, 8))
         set owner = S2I(LLMField(incoming, 9))
         set expires = S2R(LLMField(incoming, 11))
+        set cooperation = S2R(LLMField(incoming, 12))
+        set requestedType = S2I(LLMField(incoming, 13))
         if bot >= 0 and bot < GetBJMaxPlayers() and source >= 0 and source < GetBJMaxPlayers() and owner >= 0 and owner < 28 and id > 0 and action >= 1 and action <= 6 and x >= -32768 and x <= 32768 and y >= -32768 and y <= 32768 and expires > TimerGetElapsed(llmClock) and expires <= TimerGetElapsed(llmClock) + 95 then
             if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(bot)) == PLAYER_SLOT_STATE_PLAYING then
                 set key = I2S(bot)
@@ -423,6 +472,8 @@ function LLMActionPoll takes nothing returns nothing
                     call StoreReal(llmActionCache, key, "y", y)
                     call StoreReal(llmActionCache, key, "observed", S2R(LLMField(incoming, 10)))
                     call StoreReal(llmActionCache, key, "expires", expires)
+                    call StoreReal(llmActionCache, key, "cooperation", cooperation)
+                    call StoreInteger(llmActionCache, key, "unit-type", requestedType)
                     call StoreInteger(llmActionCache, key, "id", id)
                     call CommandAI(Player(bot), 95, id)
                 endif
@@ -514,7 +565,7 @@ function LLMPoll takes nothing returns nothing
     endif
     call PreloadGenClear()
     call PreloadGenStart()
-    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v3|0|-1|-1||" + I2S(llmLastReply) + "," + I2S(llmLastVisible) + "," + BlzGetLocale())
+    call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v4|0|-1|-1||" + I2S(llmLastReply) + "," + I2S(llmLastVisible) + "," + BlzGetLocale())
     // Roster snapshots live outside the 256-event history, so a bridge can
     // reconnect at any point in the match without losing bot identities.
     set i = 0
@@ -598,10 +649,10 @@ function LLMOnChat takes nothing returns nothing
         call LLMSetEnabled(false)
     elseif text == "-llm team" or text == "-llm all" or text == "-llm auto" then
         set llmInputChannel = SubString(text, 5, StringLength(text))
-        call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM input channel: " + llmInputChannel)
+        call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM bridge route: " + llmInputChannel)
     elseif llmActive and GetPlayerId(GetTriggerPlayer()) == llmHuman and SubString(text, 0, 1) != "-" then
-        call LLMJournal(Player(llmHuman), LLMChatChannel(text), text)
-        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + llmInputChannel)
+        call LLMJournal(Player(llmHuman), "unknown", text)
+        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + llmInputChannel + ";native=unknown")
     endif
 endfunction
 
@@ -653,6 +704,7 @@ function LLMInit takes nothing returns nothing
     set llmClock = CreateTimer()
     set llmPoll = CreateTimer()
     set llmCache = InitHashtable()
+    set llmForceCache = InitHashtable()
     call TimerStart(llmClock, 86400, false, null)
     loop
         exitwhen i >= GetBJMaxPlayers()

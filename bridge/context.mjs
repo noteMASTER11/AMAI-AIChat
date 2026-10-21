@@ -75,15 +75,19 @@ export class Relationships {
 export class Observations {
   latest = new Map();
   add(event) {
-    if (!['inventory', 'abilities', 'position', 'skill', 'level', 'sighting', 'self-state'].includes(event.kind)) return;
+    if (!['inventory', 'abilities', 'position', 'skill', 'level', 'sighting', 'self-state', 'map-site', 'own-forces'].includes(event.kind)) return;
     const unit = /(?:^|;)unit=(\d+)/.exec(event.extra || '')?.[1] || `${event.owner}:${event.unitType}`;
     const key = `${event.bot}:${unit}:${event.kind}`;
     const previous = this.latest.get(key);
     this.latest.set(key, { ...event });
-    if (this.latest.size > 512) this.latest.delete(this.latest.keys().next().value);
+    if (this.latest.size > 2048) this.latest.delete(this.latest.keys().next().value);
     return !previous || previous.text !== event.text;
   }
   forBot(bot, time) { return [...this.latest.values()].filter(event => event.bot === bot && time - event.time >= 0 && time - event.time <= 300).sort((a, b) => b.time - a.time).slice(0, 18); }
+  forActions(bot, time) {
+    const priority = e => e.kind === 'self-state' ? 0 : e.kind === 'own-forces' ? 1 : e.kind === 'map-site' ? 2 : e.kind === 'position' ? 3 : 4;
+    return [...this.latest.values()].filter(e => e.bot === bot && time >= e.time && time - e.time <= 180 && ['self-state', 'own-forces', 'map-site', 'position', 'sighting'].includes(e.kind)).sort((a, b) => priority(a) - priority(b) || b.time - a.time).slice(0, 80);
+  }
   clear() { this.latest.clear(); }
 }
 export function buildChunk(event, history = [], observations = [], relationships = [], maxChars = 12000, dialogue = []) {

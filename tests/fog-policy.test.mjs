@@ -41,4 +41,14 @@ describe('Observer-specific fog of war', () => {
     assert.deepEqual(game.skillReads, [44]);
     assert.ok(game.records.filter(row => row[0] === 'self-state').every(row => row[1] === row[5]));
   });
+  it('Given public terrain sites and own troops, the planner receives no enemy assignment or private roster', () => {
+    const game = llmSnapshotGame([{owner:1,id:1969711215,name:'Ghoul',visibleTo:[],order:1}]);
+    game.llmTick = 10;
+    game.LLMSample();
+    const roster = game.records.filter(row => row[0] === 'own-forces' && row[2] === 1969711215);
+    assert.equal(roster.length,1);
+    assert.equal(roster[0][1],1);
+    assert.equal(roster[0][8],'count=1;working=1');
+    assert.ok(game.records.filter(row => row[0] === 'map-site').every(row => row[5] === 27 && row[7] === 'occupancy unknown'));
+  });
 });

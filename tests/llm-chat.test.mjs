@@ -57,24 +57,25 @@ describe('Local LLM chat channel and observation boundaries', () => {
     assert.equal(game.shown.length, 0);
     assert.equal(game.journal.length, 0);
   });
-  it('Given a human public message, when it is collected, then F12 receives the author and message once', () => {
+  it('Given a human public message, when it is collected, then F12 receives the author without asserting an unavailable native channel', () => {
     const game = llmChatGame({ inputText: 'где твой тп?', inputChannel: 'all' });
 
     game.LLMOnChat();
 
     assert.equal(game.journal.length, 1);
-    assert.match(game.journal[0].text, /\[ALL\].*Player 0.*где твой тп\?/);
+    assert.match(game.journal[0].text, /\[CHAT\].*Player 0.*где твой тп\?/);
     assert.equal(game.shown.length, 0, 'the player already sent the real chat message');
     assert.ok(game.overlays.every(call => call[3] > 0 && call[3] <= 0.01));
   });
-  it('Given a human ally, when auto or an explicit channel is used, then journal labels follow bridge routing', () => {
+  it('Given an allied human, a logical bridge route is not presented as the native game channel', () => {
     const game = llmChatGame({ humanAllied: true, inputText: 'держи мейн' });
     game.LLMOnChat();
-    assert.match(game.journal[0].text, /\[TEAM\]/);
+    assert.match(game.journal[0].text, /\[CHAT\]/);
+    assert.equal(game.observed[0][8], 'input=auto;native=unknown');
 
     const publicGame = llmChatGame({ humanAllied: true, inputText: '@all привет' });
     publicGame.LLMOnChat();
-    assert.match(publicGame.journal[0].text, /\[ALL\].*привет/);
+    assert.match(publicGame.journal[0].text, /\[CHAT\].*привет/);
     assert.ok(!publicGame.journal[0].text.includes('@all'));
   });
   it('Given an LLM control command, when it is processed, then it is not mirrored as a dialogue message', () => {

@@ -55,3 +55,30 @@ describe('AMAI task execution and map acknowledgement', () => {
     assert.equal(state.value('out-status'), 4); assert.equal(state.orders.length, 0);
   });
 });
+
+describe('Cooperative tactical control', () => {
+  it('Given a friendly request for a ghoul, AI selects that type rather than an unrelated free troop', () => {
+    const ghoul = 1969711215;
+    const state = game({ action: 5, cooperation: 0.95, unitType: ghoul, units: [{ name: 'footman', attack: true }, ...Array.from({length:3}, (_,i)=>({name:'ghoul'+i,id:ghoul,attack:true,order:1}))] });
+    state.LLMTaskReceive(1); state.LLMTaskExecute();
+    assert.ok(state.orders.some(o => o[0] === 'ghoul0' && o[1] === 'move'));
+    assert.ok(!state.orders.some(o => o[0] === 'footman'));
+  });
+  it('Given poor cooperation or only the minimum economy reserve, AI does not borrow a lumber ghoul', () => {
+    const ghoul = 1969711215;
+    for (const options of [{cooperation:0.1,count:3},{cooperation:0.95,count:2}]) {
+      const state = game({ action:5, cooperation:options.cooperation, unitType:ghoul, units:Array.from({length:options.count},(_,i)=>({name:'ghoul'+i,id:ghoul,attack:true,order:1})) });
+      state.LLMTaskReceive(1); state.LLMTaskExecute();
+      assert.equal(state.value('out-status'),4);
+      assert.ok(!state.orders.some(o => o[1] === 'move'));
+    }
+  });
+  it('Given allied attack, rally, defense and retreat goals, each dispatches an actual captain order', () => {
+    for (const action of [1,2,3,4,6]) {
+      const state = game({action,cooperation:0.95});
+      state.LLMTaskReceive(1); state.LLMTaskExecute();
+      assert.equal(state.value('out-status'),3);
+      assert.ok(state.orders.length>0);
+    }
+  });
+});

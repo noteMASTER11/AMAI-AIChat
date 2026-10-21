@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { alliesFrom, audienceFor, routeFor, historyFor, followupFor } from './conversation.mjs';
+import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, routeHumanChat } from './conversation.mjs';
 const a = { slot: 1, name: 'one', allies: [0, 1, 2] };
 const b = { slot: 2, name: 'two', allies: [0, 1, 2] };
 const c = { slot: 3, name: 'enemy', allies: [3] };
@@ -28,4 +28,29 @@ test('bot replies get one addressed, bounded followup only after acknowledgement
   assert.equal(followupFor({ ...reply, recipient: 0 }, bots, 1000), null);
   assert.equal(followupFor({ ...reply, recipient: 3 }, bots, 1000), null);
   assert.equal(followupFor({ ...reply, purpose: 'probe' }, bots, 1000), null);
+});
+
+test('unknown native chat channel stays unknown when an ally causes conservative bridge routing', () => {
+  const route = routeHumanChat({ text: 'удачи всем', extra: 'input=auto;native=unknown' }, bots, 0);
+  assert.equal(route.nativeChannel, 'unknown');
+  assert.equal(route.channel, 'team');
+  assert.equal(route.inputChannelSource, 'conservative-auto');
+  assert.deepEqual(route.recipients, [1, 2]);
+});
+test('one-message route overrides persistent bridge mode without claiming the native channel', () => {
+  const team = routeHumanChat({ text: '@team держи мейн', extra: 'input=all;native=unknown' }, bots, 0);
+  assert.equal(team.channel, 'team'); assert.equal(team.text, 'держи мейн');
+  assert.equal(team.nativeChannel, 'unknown');
+  const all = routeHumanChat({ text: '@all привет', extra: 'input=team;native=unknown' }, bots, 0);
+  assert.equal(all.channel, 'all'); assert.deepEqual(all.recipients, [1, 2, 3]);
+  const legacy = routeHumanChat({ text: 'hey', extra: 'input=all' }, bots, 0);
+  assert.equal(legacy.channel, 'all'); assert.equal(legacy.nativeChannel, 'unknown');
+});
+
+test('allied enemy bots are not offered private conversations invisible to the human', () => {
+  const enemies = new Map([[3, { slot: 3, name: 'enemy A', allies: [3,4] }], [4, { slot: 4, name: 'enemy B', allies: [3,4] }]]);
+  const human = { slot: 0, name: 'human' };
+  assert.deepEqual(audienceFor(enemies.get(3), enemies, human).map(p => p.slot), [0]);
+  assert.throws(() => routeFor(enemies.get(3),4,enemies,0));
+  assert.equal(followupFor({ session:'123456789',seq:10,bot:3,recipient:4,channel:'team',recipients:[3,4],text:'private',purpose:'llm',depth:0 },enemies,100,0),null);
 });

@@ -34,6 +34,6 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     LLMRecord: (...args) => observed.push(args),
     shown, overlays, observed, journal, preloads,
   };
-  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMChatChannel', 'LLMAllies', 'LLMObserve', 'LLMPoll', 'LLMOnChat'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
+  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMPoll', 'LLMOnChat'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
   return state;
 }

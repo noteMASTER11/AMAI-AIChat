@@ -1,17 +1,49 @@
 // Runs inside the normal attack thread: no additional AI threads and no model-controlled micro.
-function LLMTaskScout takes real x, real y, real deadline returns string
+function LLMScoutScore takes unit u, integer preferredType, real cooperation returns integer
+  local integer order = GetUnitCurrentOrder(u)
+  local integer id = GetUnitTypeId(u)
+  local boolean working = order == OrderId("harvest") or order == OrderId("resumeharvesting") or order == OrderId("returnresources")
+  if not UnitAlive(u) or IsUnitHidden(u) or IsUnitLoaded(u) or IsUnitType(u, UNIT_TYPE_HERO) or IsUnitType(u, UNIT_TYPE_STRUCTURE) or IsUnitType(u, UNIT_TYPE_SUMMONED) or not IsStandardUnit(u) or IsUnitBuying(u) or GetUnitState(u, UNIT_STATE_LIFE) <= 0.8 * GetUnitState(u, UNIT_STATE_MAX_LIFE) then
+    return -1
+  endif
+  if preferredType != 0 and id != preferredType then
+    return -1
+  endif
+  if working or IsUnitType(u, UNIT_TYPE_PEON) then
+    if cooperation < 0.7 or IsReservedHarvestPeon(u) then
+      return -1
+    endif
+    if id == old_id[racial_ghoul] then
+      if TownCountDone(racial_ghoul) <= race_min_ghouls then
+        return -1
+      endif
+    elseif preferredType == 0 or id == 'uaco' or GetPlayerUnitTypeCount(ai_player, id) < 6 or LoadUnitHandle(harvest_assignments, 0, GetHandleId(u)) != null or (order != 0 and not working) then
+      return -1
+    endif
+    return 1
+  endif
+  if not IsUnitType(u, UNIT_TYPE_ATTACKS_GROUND) and not IsUnitType(u, UNIT_TYPE_ATTACKS_FLYING) then
+    return -1
+  endif
+  return 3
+endfunction
+
+function LLMTaskScout takes real x, real y, real deadline, integer preferredType, real cooperation returns string
   local group g = CreateGroup()
   local unit u = null
   local unit scout = null
   local string result = "no-scout"
-    call GroupEnumUnitsOfPlayer(g, ai_player, null)
+  local integer score = -1
+  local integer best = -1
+  call GroupEnumUnitsOfPlayer(g, ai_player, null)
   loop
     set u = FirstOfGroup(g)
     exitwhen u == null
     call GroupRemoveUnit(g, u)
-    if UnitAlive(u) and not IsUnitHidden(u) and not IsUnitType(u, UNIT_TYPE_PEON) and not IsUnitType(u, UNIT_TYPE_HERO) and not IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitType(u, UNIT_TYPE_SUMMONED) and (IsUnitType(u, UNIT_TYPE_ATTACKS_GROUND) or IsUnitType(u, UNIT_TYPE_ATTACKS_FLYING)) and not IsUnitInGroup(u, unit_harassing) and not IsUnitInGroup(u, unit_healing) and GetUnitState(u, UNIT_STATE_LIFE) > 0.8 * GetUnitState(u, UNIT_STATE_MAX_LIFE) then
+    set score = LLMScoutScore(u, preferredType, cooperation)
+    if score > best then
       set scout = u
-      exitwhen true
+      set best = score
     endif
   endloop
   call DestroyGroup(g)
@@ -58,6 +90,8 @@ function LLMTaskExecute takes nothing returns boolean
   local real now = GetStoredReal(llmActionCache, "clock", "now")
   local string result = "deadline"
   local integer status = 6
+  local integer preferredType = llmTaskUnitType
+  local real cooperation = llmTaskCooperation
   if id == 0 then
     return false
   endif
@@ -78,7 +112,7 @@ function LLMTaskExecute takes nothing returns boolean
   endif
   call LLMTaskReport(id, 2, "started")
   if action == 5 then
-    set result = LLMTaskScout(x, y, deadline)
+    set result = LLMTaskScout(x, y, deadline, preferredType, cooperation)
     if result == "confirmed" or result == "empty" then
       set status = 3
     elseif result == "no-scout" then
@@ -145,6 +179,6 @@ function LLMExplore takes nothing returns nothing
   set y = GetStartLocationY(llmExploreSite)
   if not IsVisibleToPlayer(x, y, ai_player) then
     set break_attack = false
-    set result = LLMTaskScout(x, y, now + 30)
+    set result = LLMTaskScout(x, y, now + 30, 0, 0.0)
   endif
 endfunction

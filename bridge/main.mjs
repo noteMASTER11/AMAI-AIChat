@@ -1,4 +1,4 @@
-import { ActionController, actionCandidates, disclosureContext, makeAction } from './actions.mjs';
+import { ActionController, actionCandidates, disclosureContext, makeAction, actionCapabilities } from './actions.mjs';
 import { readFile, writeFile, rename, mkdir, stat, readdir, unlink, open } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { parseEvents, makeReply, cleanText, Inbox, replyWindow, expireReplies } from './protocol.mjs';
 import { Scheduler } from './scheduler.mjs';
 import { CodexClient } from './codex.mjs';
-import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, parseAcknowledgement } from './conversation.mjs';
+import { alliesFrom, audienceFor, routeFor, historyFor, followupFor, parseAcknowledgement, routeHumanChat } from './conversation.mjs';
 import { Relationships, Observations } from './context.mjs';
 import { waitForGame } from './delivery.mjs';
 import { recoverDialogue, repeatedReply } from './dialogue.mjs';
@@ -152,10 +152,11 @@ async function generateOne(event) {
     if (!audience.length) { outcome = 'silent'; return; }
     let context = { ...event, audience, temperament: relationships.personality(event.session, bot.slot), privateOwners: bot.allies, activeTask: actions.tasks.findLast(t => t.bot === bot.slot), humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience), recentDialogue: dialogue.forBot(bot.slot), languagePreferences: languages.forBot(bot.slot) };
     let observedHistory = historyFor(bot.slot, history);
-    if (['chat', 'bot-chat'].includes(event.kind) && tick?.unitName === 'roster-v3') {
-      const planning = await client.generate({ ...context, informationTrust: actions.trust[`${bot.slot}:${event.sourceBot ?? human.slot}`] || 0, actionCandidates: actionCandidates(bot.slot, context.observations, event.time) }, bot, observedHistory, true);
+    if (['chat', 'bot-chat'].includes(event.kind) && tick?.unitName === 'roster-v4') {
+      const actionObservations = observations.forActions(bot.slot, event.time);
+      const planning = await client.generate({ ...context, actionCapabilities: actionCapabilities(bot.slot, actionObservations, event.time), informationTrust: actions.trust[`${bot.slot}:${event.sourceBot ?? human.slot}`] || 0, actionCandidates: actionCandidates(bot.slot, actionObservations, event.time) }, bot, observedHistory, true);
       if (!running || event.session !== inbox.session || !scheduler.isCurrent(event, Date.now())) { outcome = 'expired'; return; }
-      const result = actions.propose(planning.intent, { event, bot, human: human.slot, observations: context.observations, relationship: relationships.get(event.session, bot.slot, event.sourceBot ?? human.slot) });
+      const result = actions.propose(planning.intent, { event, bot, human: human.slot, observations: actionObservations, relationship: relationships.get(event.session, bot.slot, event.sourceBot ?? human.slot) });
       log('action-decision', { session: event.session, seq: event.seq, bot: bot.slot, ...result });
       if (result.accepted) await publishAction(result.task);
       context = { ...context, actionOutcome: result };
@@ -240,7 +241,7 @@ try {
                 log('reply-acknowledged', { ...delivery, visible: acknowledgement.visible, delayMs: Date.now() - delivery.publishedAt }); awaitingDelivery.delete(poll);
                 if (delivery.purpose === 'llm') {
                   history.push({ ...delivery, kind: 'reply' });
-                  const followup = followupFor(delivery, bots, heartbeat.time);
+                  const followup = followupFor(delivery, bots, heartbeat.time, human.slot);
                   if (followup) { scheduler.add(followup, Date.now()); log('bot-dialogue', followup); }
                 }
               }
@@ -271,14 +272,8 @@ try {
               }
               if (event.kind === 'hello') { human.name = event.extra || 'Игрок'; history.push(event); continue; }
               if (event.kind === 'chat') {
-                const allies = [...bots.values()].filter(bot => bot.allies.includes(human.slot)).map(bot => bot.slot);
-                const explicitAll = /^@all\s/i.test(event.text) || event.extra === 'input=all';
-                const explicitTeam = /^@team\s/i.test(event.text) || event.extra === 'input=team';
-                const team = !explicitAll && (explicitTeam || allies.length > 0);
-                event.recipients = team ? allies : [...bots.keys()];
-                event.channel = team ? 'team' : 'all';
-                event.text = event.text.replace(/^@(all|team)\s+/i, '');
-                log('game-event', { ...event, inputChannelSource: 'bridge-mode' });
+                Object.assign(event, routeHumanChat(event, bots, human.slot));
+                log('game-event', event);
               }
               const bot = event.bot >= 0 ? bots.get(event.bot) : chooseBot(event.text, event.recipients);
               if (!bot) continue;
@@ -310,7 +305,7 @@ try {
         await client.start(); modelReady = true; lastLimitsRead = Date.now();
         log('llm-active', 'Only generated conversations; AMAI template chat is muted.');
       }
-      if (verified && mode === 'llm' && modelReady && !generation && tick?.unitName === 'roster-v3' && Date.now() - tick.wall < 3000) {
+      if (verified && mode === 'llm' && modelReady && !generation && tick?.unitName === 'roster-v4' && Date.now() - tick.wall < 3000) {
         const event = scheduler.take(Date.now());
         if (event) generation = generateOne(event);
       }

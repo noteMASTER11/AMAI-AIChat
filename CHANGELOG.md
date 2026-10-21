@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) Human F12 entries no longer guess ALL/TEAM from alliances or bridge settings. They use CHAT; telemetry distinguishes the unknown native game channel from the logical bridge recipient route. Per-message @all/@team overrides now take priority over persistent routing mode.
+
 - (AI) Foreign army/town tracking, strength estimates, hidden-target pursuit and enemy base selection now use visible or previously observed information rather than hidden unit state and actual enemy start assignments.
 - (AI chat) Allied status alone no longer exposes private research, learned hero abilities or unseen inventory. Public enemy replies receive a redacted voice context without own-team construction, inventory, team conversations or internal plans.
 
@@ -19,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - (Monitoring) Large telemetry snapshots no longer trigger a reconnect loop. The live stream waits for its output buffer to drain and catches up with journal entries; internal restart history is no longer duplicated in every dashboard update.
 
 ### Added
+
+- (AI) Cooperative handling of all supported tactical requests now receives explicit capabilities, a private own-unit roster and public unexplored search sites. Good relationships lower the confidence threshold for clear requests, shorten command replacement cooldown and permit a specific scout type with economic reserves preserved. Unknown enemy bases trigger reconnaissance instead of an unsupported-control reply.
 
 - (AI) Typed chat goals for retreat, rally, defense, known-point attack/focus and single-unit reconnaissance, with source/target validation, expiry, home-defense priority, execution acknowledgements and separate information trust. Old sightings trigger reconnaissance rather than tracking a hidden moving unit. Map/AI transport remains subject to live-match verification.
 - (AI chat) Persistent per-match temperament, randomized directed starting affinity and asymmetric positive/negative relationship sensitivity. Toxic bots resist praise; friendly bots resist insults.
@@ -34,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - (devtools) Protocol, scheduling, context, relationship, monitoring API and installation regression checks.
 
 ### Changed
+
+- (AI chat) Allied enemy bots no longer generate private team conversations invisible to the human. Recipient selection, routing validation and followup scheduling all enforce this; human-team and public conversations remain available.
 
 - (AI chat) Personas now use more natural uncensored profanity according to mood and relationships. Default dialogue language follows the game client locale; a substantive human message in another language switches that bot's conversation, with the preference retained across events and bridge restarts. Short slang and emoticons do not request a switch.
 - (AI chat) Relationship impact now uses a signed exponential curve with a maximum step of ±0.8. Strong personal insults or substantial help can immediately change a directed relationship; mild banter causes small changes. Event valence remains independent, and assessments record raw impact and the actual clamped change.
