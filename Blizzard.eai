@@ -577,16 +577,12 @@ endfunction
 function ZoomSet takes nothing returns nothing
   local real Zoom = 0
   local integer i = GetPlayerId(GetTriggerPlayer())
-  local string ChatMsg = GetEventPlayerChatString()
-#IFDEF REFORGED
-  set ChatMsg = LLMChatText()
-#ENDIF
   call TraceToAll("ZOOM SET Triggered")
-  if SubStringBJ(ChatMsg, 6, 6) != "k" then
-    if SubStringBJ(ChatMsg, 6, 6) != " " then
-      set Zoom = S2R(SubStringBJ(ChatMsg, 6, 10))
+  if SubStringBJ(GetEventPlayerChatString(), 6, 6) != "k" then
+    if SubStringBJ(GetEventPlayerChatString(), 6, 6) != " " then
+      set Zoom = S2R(SubStringBJ(GetEventPlayerChatString(), 6, 10))
     else
-      set Zoom = S2R(SubStringBJ(ChatMsg, 7, 11))
+      set Zoom = S2R(SubStringBJ(GetEventPlayerChatString(), 7, 11))
     endif
     if (GetTriggerPlayer() == GetLocalPlayer()) then
       if Zoom < 1650 then
@@ -1651,9 +1647,6 @@ function Commander takes nothing returns nothing
   local player Comp = null
   local string ChatMsg = GetEventPlayerChatString()
   local integer cn = 0
-#IFDEF REFORGED
-  set ChatMsg = LLMChatText()
-#ENDIF
 
   if not CanUseCommander(GetTriggerPlayer()) then
     return

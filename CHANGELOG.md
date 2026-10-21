@@ -8,13 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Fixed
 
 - (AI telemetry) Session cache reset now recreates the flushed table; troop aggregation clears only its scratch partitions. This fixes zero-count duplicate roster records and failed snapshot deduplication. Unchanged sightings/rosters refresh every 10 seconds, inventory/abilities every 60 seconds; direct gameplay events remain immediate.
-- (AI telemetry) Player snapshots are staggered one owner per half-second tick with a five-second minimum revisit interval. Visible hero inventory is read once per owner pass. Exports retain 64 recent records plus up to 32 older important records instead of rewriting the full 256-record ring; transport timing remains unchanged. Idle keyboard polling no longer repeatedly queries/hides UI frames.
-
-- (AI chat) Local single-human chat now uses a controlled input field and renders human submissions through Warcraft's native chat with the selected ALL/TEAM channel, instead of leaving every human line in the single-player ALL channel. F12 and LLM recipients use the same selection. Legacy AMAI/zoom commands retain their original handlers; duplicate submissions are filtered.
+- (AI telemetry) Player snapshots are staggered one owner per half-second tick with a five-second minimum revisit interval. Visible hero inventory is read once per owner pass. Exports retain 64 recent records plus up to 32 older important records instead of rewriting the full 256-record ring; transport timing remains unchanged.
 
 - (AI chat) Immediately skipped events no longer leave the generation slot permanently occupied. The launch is deferred until its promise has been assigned, so later player messages can still receive replies.
-- (AI chat) Enter now selects allied LLM recipients when an allied computer exists; Shift+Enter selects all bots. Selection is captured when input opens and retained through submission. Escape/menu navigation cancels it; a brief AMAI ALL/TEAM label shows the selected bridge route while native text entry remains in use.
-
 - (AI chat) In local single-human matches with a computer ally, the native Allies button is re-enabled while the normal menu is available. Its built-in dialog and hotkeys are retained; native team-chat behavior still requires verification in Warcraft 3.0.1.
 
 - (AI chat) Automatic input routing now treats ordinary human messages as public even when allied bots exist. Explicit @team or -llm team still selects allied LLM recipients; the unavailable native channel remains marked unknown.
@@ -50,6 +46,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - (devtools) Protocol, scheduling, context, relationship, monitoring API and installation regression checks.
 
 ### Changed
+
+- (AI chat) Human input uses Warcraft's native chat exclusively. The custom input field, keyboard interception, focus manipulation and channel overlay were removed. The Allies button remains enabled for computer allies; explicit LLM routing commands do not change the native game channel.
 
 - (AI chat) Allied enemy bots no longer generate private team conversations invisible to the human. Recipient selection, routing validation and followup scheduling all enforce this; human-team and public conversations remain available.
 

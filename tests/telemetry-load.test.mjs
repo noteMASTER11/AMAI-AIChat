@@ -45,16 +45,6 @@ describe('Bounded game telemetry work', () => {
     game.LLMSampleStep();
     assert.equal(game.enumerations.at(-1), 0);
   });
-  it('idle keyboard polling does not repeatedly touch or hide UI frames', () => {
-    const game = llmChatGame();
-    let reads = 0, writes = 0;
-    game.BlzGetFrameByName = () => { reads++; return null; };
-    game.BlzFrameSetVisible = () => { writes++; };
-    game.BlzFrameSetFocus = () => { writes++; };
-    for(let i=0;i<100;i++)game.LLMInputUpdate();
-    assert.equal(reads, 0);
-    assert.equal(writes, 0);
-  });
   it('exports at most 64 recent plus 32 older important records in sequence order', () => {
     const game = llmChatGame();
     game.llmSeq = 256;
