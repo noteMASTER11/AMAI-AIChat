@@ -97,6 +97,73 @@ describe('Local LLM chat channel and observation boundaries', () => {
 });
 
 describe('Local chat hotkeys select recipients at input opening', () => {
+  it('typed AMAI commands retain their text without becoming LLM conversation', () => {
+    const game = llmChatGame({ humanAllied: true, inputText: '-zoom 2000' });
+    game.LLMOnChatKey();
+    game.presentInput();
+    game.LLMOnComposerEnter();
+
+    assert.deepEqual(game.forwardedCommands, [{ name: 'ZoomSet', text: '-zoom 2000' }]);
+    assert.equal(game.llmForwardedChat, '');
+    assert.equal(game.observed.length, 0);
+  });
+  it('Enter shows one team message through native chat, records TEAM in F12, and excludes enemies', () => {
+    const game = llmChatGame({ humanAllied: true, inputText: 'прикрой' });
+    game.LLMOnChatKey();
+    game.presentInput();
+    assert.equal(game.llmInputBox.focused, true);
+    assert.equal(game.nativeDismissals, 1);
+
+    game.LLMOnComposerEnter();
+
+    assert.deepEqual(game.shown, [{ speaker: 0, channel: 1, text: 'прикрой' }]);
+    assert.match(game.journal[0].text, /\[TEAM\]/);
+    const route = routeHumanChat({ text: 'прикрой', extra: game.observed[0][8] }, new Map([[1, { slot: 1, allies: [0, 1] }], [2, { slot: 2, allies: [2] }]]), 0);
+    assert.deepEqual(route.recipients, [1]);
+    assert.equal(game.llmInputBox.visible, false);
+  });
+  it('Shift+Enter displays a public message after Shift is released', () => {
+    const game = llmChatGame({ humanAllied: true, inputText: 'привет всем' });
+    game.meta = 1;
+    game.LLMOnChatKey();
+    game.presentInput();
+    game.meta = 0;
+    game.LLMOnComposerEnter();
+
+    assert.deepEqual(game.shown, [{ speaker: 0, channel: 0, text: 'привет всем' }]);
+    assert.match(game.journal[0].text, /\[ALL\]/);
+  });
+  it('an explicit prefix changes both the rendered channel and LLM recipients', () => {
+    const game = llmChatGame({ humanAllied: true, inputText: '@all привет' });
+    game.LLMOnChatKey();
+    game.presentInput();
+    game.LLMOnComposerEnter();
+
+    assert.deepEqual(game.shown, [{ speaker: 0, channel: 0, text: 'привет' }]);
+    assert.match(game.observed[0][8], /^input=all;/);
+  });
+  it('Escape closes the composer and a stale frame event cannot send its text', () => {
+    const game = llmChatGame({ humanAllied: true });
+    game.LLMOnChatKey();
+    game.presentInput();
+    game.keys.add(game.OSKEY_ESCAPE);
+    game.LLMInputUpdate();
+    game.LLMOnComposerEnter();
+
+    assert.equal(game.shown.length, 0);
+    assert.equal(game.observed.length, 0);
+    assert.equal(game.llmInputBox.focused, false);
+  });
+  it('an immediate duplicate native chat event cannot enqueue the custom submission again', () => {
+    const game = llmChatGame({ humanAllied: true });
+    game.LLMOnChatKey();
+    game.presentInput();
+    game.LLMOnComposerEnter();
+    game.LLMOnChat();
+
+    assert.equal(game.observed.length, 1);
+    assert.equal(game.shown.length, 1);
+  });
   it('Enter with a computer ally keeps the message away from enemy LLM contexts', () => {
     const game = llmChatGame({ humanAllied: true, inputText: 'прикрой базу' });
     game.keys.add(game.OSKEY_RETURN);

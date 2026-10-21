@@ -12,6 +12,14 @@
     real llmInputSubmittedAt = -10
     timer llmInputTimer = null
     framehandle llmInputLabel = null
+    framehandle llmInputBox = null
+    framehandle llmInputBackdrop = null
+    timer llmInputPresentationTimer = null
+    trigger llmInputSubmitTrigger = null
+    boolean llmComposerActive = false
+    string llmLastComposerText = ""
+    real llmLastComposerAt = -10
+    string llmForwardedChat = ""
     string llmSession = ""
     string array llmRecords
     timer llmClock = null

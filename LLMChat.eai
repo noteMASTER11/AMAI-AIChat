@@ -1,5 +1,12 @@
 // Local-only; enabled after melee AI startup or by -llm on.
 // Unique incoming filenames avoid caching a previous preload script.
+function LLMChatText takes nothing returns string
+    if llmForwardedChat != "" then
+        return llmForwardedChat
+    endif
+    return GetEventPlayerChatString()
+endfunction
+
 function LLMEncode takes string s returns string
     local integer i = 0
     local string c
@@ -553,6 +560,14 @@ endfunction
 function LLMInputCancel takes nothing returns nothing
     set llmInputOpen = false
     set llmInputChoice = ""
+    set llmComposerActive = false
+    if llmInputBox != null then
+        call BlzFrameSetFocus(llmInputBox, false)
+        call BlzFrameSetVisible(llmInputBox, false)
+    endif
+    if llmInputBackdrop != null then
+        call BlzFrameSetVisible(llmInputBackdrop, false)
+    endif
     if llmInputLabel != null then
         call BlzFrameSetVisible(llmInputLabel, false)
     endif
@@ -562,6 +577,34 @@ function LLMInputFinish takes nothing returns nothing
     call LLMInputCancel()
     set llmInputSubmittedAt = TimerGetElapsed(llmClock)
     set llmEnterDown = BlzIsKeyPressed(OSKEY_RETURN)
+endfunction
+
+// Opening and immediately cancelling the menu dismisses the built-in input.
+// Defer this until the engine has finished handling the opening/submit key.
+function LLMInputCloseNative takes nothing returns nothing
+    local framehandle menu = BlzGetFrameByName("UpperButtonBarMenuButton", 0)
+    if menu != null and BlzFrameGetEnable(menu) then
+        call BlzFrameClick(menu)
+        call ForceUICancel()
+    endif
+    set menu = null
+endfunction
+
+function LLMInputPresent takes nothing returns nothing
+    if not llmActive or not llmInputOpen or llmInputBox == null then
+        return
+    endif
+    call LLMInputCloseNative()
+    if not LLMInputReady() then
+        call LLMInputCancel()
+        return
+    endif
+    call BlzFrameSetText(llmInputBox, "")
+    call BlzFrameSetVisible(llmInputBackdrop, true)
+    call BlzFrameSetVisible(llmInputLabel, true)
+    call BlzFrameSetVisible(llmInputBox, true)
+    set llmComposerActive = true
+    call BlzFrameSetFocus(llmInputBox, true)
 endfunction
 
 function LLMInputSelect takes boolean publicChat returns nothing
@@ -582,6 +625,7 @@ function LLMInputSelect takes boolean publicChat returns nothing
         endif
         call BlzFrameSetVisible(llmInputLabel, true)
     endif
+    call TimerStart(llmInputPresentationTimer, 0.0, false, function LLMInputPresent)
 endfunction
 
 function LLMOnChatKey takes nothing returns nothing
@@ -609,18 +653,32 @@ function LLMInputUpdate takes nothing returns nothing
         call LLMInputSelect(BlzIsKeyPressed(OSKEY_LSHIFT) or BlzIsKeyPressed(OSKEY_RSHIFT))
     endif
     set llmEnterDown = down
-    if llmInputLabel != null and TimerGetElapsed(llmClock) - llmInputOpenedAt > 4.0 then
+    if not llmComposerActive and llmInputLabel != null and TimerGetElapsed(llmClock) - llmInputOpenedAt > 4.0 then
         call BlzFrameSetVisible(llmInputLabel, false)
     endif
 endfunction
 
 function LLMInputStart takes nothing returns nothing
     if llmInputLabel == null then
+        set llmInputBackdrop = BlzCreateFrameByType("BACKDROP", "AMAIChatBackdrop", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), "", 0)
+        call BlzFrameSetAbsPoint(llmInputBackdrop, FRAMEPOINT_CENTER, 0.4, 0.20)
+        call BlzFrameSetSize(llmInputBackdrop, 0.59, 0.034)
+        call BlzFrameSetTexture(llmInputBackdrop, "UI\\Widgets\\ToolTips\\Human\\human-tooltip-background.blp", 0, true)
+        call BlzFrameSetEnable(llmInputBackdrop, false)
         set llmInputLabel = BlzCreateFrameByType("TEXT", "AMAIChatRoute", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), "", 0)
-        call BlzFrameSetAbsPoint(llmInputLabel, FRAMEPOINT_BOTTOMLEFT, 0.20, 0.205)
-        call BlzFrameSetSize(llmInputLabel, 0.4, 0.018)
+        call BlzFrameSetAbsPoint(llmInputLabel, FRAMEPOINT_LEFT, 0.115, 0.20)
+        call BlzFrameSetSize(llmInputLabel, 0.105, 0.022)
         call BlzFrameSetFont(llmInputLabel, "Fonts\\FRIZQT__.TTF", 0.012, 0)
         call BlzFrameSetEnable(llmInputLabel, false)
+        set llmInputBox = BlzCreateFrameByType("EDITBOX", "AMAIChatInput", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), "", 0)
+        call BlzFrameSetAbsPoint(llmInputBox, FRAMEPOINT_LEFT, 0.225, 0.20)
+        call BlzFrameSetSize(llmInputBox, 0.455, 0.026)
+        call BlzFrameSetFont(llmInputBox, "Fonts\\FRIZQT__.TTF", 0.013, 0)
+        call BlzFrameSetTextColor(llmInputBox, BlzConvertColor(255, 255, 255, 255))
+        // Frame input events carry at most 255 bytes. 120 Cyrillic characters
+        // fit in that transport; keep the editor bounded as well as bot output.
+        call BlzFrameSetTextSizeLimit(llmInputBox, 120)
+        call BlzTriggerRegisterFrameEvent(llmInputSubmitTrigger, llmInputBox, FRAMEEVENT_EDITBOX_ENTER)
     endif
     call LLMInputCancel()
     set llmEnterDown = BlzIsKeyPressed(OSKEY_RETURN)
@@ -788,13 +846,32 @@ function LLMSetEnabled takes boolean enabled returns nothing
     endif
 endfunction
 
-function LLMOnChat takes nothing returns nothing
-    local string text = GetEventPlayerChatString()
+function LLMProcessHumanText takes string text, boolean renderLocal returns nothing
     local string input = llmInputChannel
     local string source = "bridge-mode"
+    local string nativeChannel = "unknown"
+    local string shown = text
+    local integer mode = 0
+    if GetPlayerId(GetTriggerPlayer()) != llmHuman then
+        return
+    endif
     if llmInputChoice != "" then
         set input = llmInputChoice
         set source = "hotkey"
+    endif
+    if renderLocal then
+        set source = "local-composer"
+        if input != "team" then
+            set input = "all"
+        endif
+        if StringCase(SubString(text, 0, 5), false) == "@all " then
+            set input = "all"
+            set shown = SubString(text, 5, StringLength(text))
+        elseif StringCase(SubString(text, 0, 6), false) == "@team " then
+            set input = "team"
+            set shown = SubString(text, 6, StringLength(text))
+        endif
+        set nativeChannel = input
     endif
     if text == "-llm on" then
         call LLMSetEnabled(true)
@@ -803,12 +880,50 @@ function LLMOnChat takes nothing returns nothing
     elseif text == "-llm team" or text == "-llm all" or text == "-llm auto" then
         set llmInputChannel = SubString(text, 5, StringLength(text))
         call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM bridge route: " + llmInputChannel)
-    elseif llmActive and GetPlayerId(GetTriggerPlayer()) == llmHuman and SubString(text, 0, 1) != "-" then
-        call LLMJournal(Player(llmHuman), "unknown", text)
-        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + input + ";native=unknown;route-source=" + source)
+    elseif llmActive and renderLocal and SubString(text, 0, 1) == "-" then
+        // These handlers normally read a native chat event. Preserve their
+        // text and triggering player when the input came from our edit box.
+        set llmForwardedChat = text
+        if SubString(text, 0, 5) == "-zoom" then
+            call ExecuteFunc("ZoomSet")
+        else
+            call ExecuteFunc("Commander")
+        endif
+        set llmForwardedChat = ""
+    elseif llmActive and text != "" and SubString(text, 0, 1) != "-" then
+        if renderLocal then
+            if input == "team" then
+                set mode = 1
+            endif
+            call BlzDisplayChatMessage(Player(llmHuman), mode, shown)
+            call LLMJournal(Player(llmHuman), input, text)
+            set llmLastComposerText = text
+            set llmLastComposerAt = TimerGetElapsed(llmClock)
+        else
+            call LLMJournal(Player(llmHuman), "unknown", text)
+        endif
+        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + input + ";native=" + nativeChannel + ";route-source=" + source)
     endif
     if GetPlayerId(GetTriggerPlayer()) == llmHuman then
         call LLMInputFinish()
+    endif
+endfunction
+
+function LLMOnChat takes nothing returns nothing
+    local string text = GetEventPlayerChatString()
+    if text == llmLastComposerText and TimerGetElapsed(llmClock) - llmLastComposerAt < 0.25 then
+        return
+    endif
+    call LLMProcessHumanText(text, false)
+endfunction
+
+function LLMOnComposerEnter takes nothing returns nothing
+    if not llmActive or not llmComposerActive or BlzGetTriggerFrame() != llmInputBox then
+        return
+    endif
+    call LLMProcessHumanText(BlzGetTriggerFrameText(), true)
+    if llmActive then
+        call TimerStart(llmInputPresentationTimer, 0.0, false, function LLMInputCloseNative)
     endif
 endfunction
 
@@ -861,6 +976,9 @@ function LLMInit takes nothing returns nothing
     set llmClock = CreateTimer()
     set llmPoll = CreateTimer()
     set llmInputTimer = CreateTimer()
+    set llmInputPresentationTimer = CreateTimer()
+    set llmInputSubmitTrigger = CreateTrigger()
+    call TriggerAddAction(llmInputSubmitTrigger, function LLMOnComposerEnter)
     set llmCache = InitHashtable()
     set llmForceCache = InitHashtable()
     call TimerStart(llmClock, 86400, false, null)

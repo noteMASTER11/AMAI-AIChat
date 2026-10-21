@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) Local single-human chat now uses a controlled input field and renders human submissions through Warcraft's native chat with the selected ALL/TEAM channel, instead of leaving every human line in the single-player ALL channel. F12 and LLM recipients use the same selection. Legacy AMAI/zoom commands retain their original handlers; duplicate submissions are filtered.
+
 - (AI chat) Immediately skipped events no longer leave the generation slot permanently occupied. The launch is deferred until its promise has been assigned, so later player messages can still receive replies.
 - (AI chat) Enter now selects allied LLM recipients when an allied computer exists; Shift+Enter selects all bots. Selection is captured when input opens and retained through submission. Escape/menu navigation cancels it; a brief AMAI ALL/TEAM label shows the selected bridge route while native text entry remains in use.
 

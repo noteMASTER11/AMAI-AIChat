@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 export const zeros = () => Array(8192).fill(0);
 const rawcode = value => [...value].reduce((code, char) => code * 256 + char.charCodeAt(0), 0);
 export const expression = value => value.replace(/\band\b/g, '&&').replace(/\bor\b/g, '||')
+  .replace(/\bfunction\s+(\w+)(?=\s*[,)]|$)/g, '$1')
   .replace(/\bnot\b/g, '!').replace(/'([^']{4})'/g, (_, code) => rawcode(code));
 
 // Pass globalTypes for tests that model integer assignments and returns.

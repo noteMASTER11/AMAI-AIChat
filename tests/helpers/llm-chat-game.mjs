@@ -8,12 +8,23 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
   const allies = new Set(['1:3', '3:1', ...(humanAllied ? ['0:1', '1:0'] : [])]);
   const frames = new Map([['UpperButtonBarMenuButton', { enabled: true, visible: false }], ['UpperButtonBarAlliesButton', { enabled: false, visible: false }]]);
   const keys = new Set();
+  const timers = new Map();
   const state = {
     llmActive: true, llmSeq: 1, llmTick: 0, llmLastReply: 0, llmLastVisible: 0,
     llmSession: '123456789', llmHuman: 0, llmClock: {}, llmRecords: [],
     llmInputChannel: inputChannel,
     llmInputChoice: '', llmInputOpen: false, llmEnterDown: false, llmInputOpenedAt: 0, llmInputSubmittedAt: -10,
     llmInputLabel: { visible: false, text: '' }, now: 10, keys, frames, meta: 0, key: 'return',
+    llmInputBox: { visible: false, focused: false }, llmInputBackdrop: { visible: false }, llmInputPresentationTimer: {},
+    llmComposerActive: false, llmLastComposerText: '', llmLastComposerAt: -10,
+    llmForwardedChat: '', forwardedCommands: [],
+    ExecuteFunc: name => state.forwardedCommands.push({ name, text: state.llmForwardedChat }),
+    submittedText: inputText, nativeDismissals: 0,
+    TimerStart: (timer, seconds, periodic, callback) => timers.set(timer, callback),
+    presentInput: () => { const callback = timers.get(state.llmInputPresentationTimer); timers.delete(state.llmInputPresentationTimer); callback?.(); },
+    BlzGetTriggerFrame: () => state.llmInputBox, BlzGetTriggerFrameText: () => state.submittedText,
+    BlzFrameSetFocus: (frame, focused) => { frame.focused = focused; },
+    BlzFrameClick: () => { state.nativeDismissals++; }, ForceUICancel: () => {},
     OSKEY_RETURN: 'return', OSKEY_ESCAPE: 'escape', OSKEY_LSHIFT: 'left-shift', OSKEY_RSHIFT: 'right-shift',
     BlzIsKeyPressed: key => keys.has(key), BlzIsLocalClientActive: () => true,
     BlzGetTriggerPlayerKey: () => state.key, BlzGetTriggerPlayerMetaKey: () => state.meta,
@@ -45,6 +56,6 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     LLMRecord: (...args) => observed.push(args),
     shown, overlays, observed, journal, preloads,
   };
-  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMInputReady', 'LLMInputHasAlly', 'LLMInputCancel', 'LLMInputFinish', 'LLMInputSelect', 'LLMInputUpdate', 'LLMOnChatKey', 'LLMEnableAlliesMenu', 'LLMPoll', 'LLMOnChat'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
+  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMInputReady', 'LLMInputHasAlly', 'LLMInputCancel', 'LLMInputFinish', 'LLMInputCloseNative', 'LLMInputPresent', 'LLMInputSelect', 'LLMInputUpdate', 'LLMOnChatKey', 'LLMEnableAlliesMenu', 'LLMPoll', 'LLMProcessHumanText', 'LLMOnChat', 'LLMOnComposerEnter'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
   return state;
 }
