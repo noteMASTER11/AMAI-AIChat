@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI telemetry) Session cache reset now recreates the flushed table; troop aggregation clears only its scratch partitions. This fixes zero-count duplicate roster records and failed snapshot deduplication. Unchanged sightings/rosters refresh every 10 seconds, inventory/abilities every 60 seconds; direct gameplay events remain immediate.
+- (AI telemetry) Player snapshots are staggered one owner per half-second tick with a five-second minimum revisit interval. Visible hero inventory is read once per owner pass. Exports retain 64 recent records plus up to 32 older important records instead of rewriting the full 256-record ring; transport timing remains unchanged. Idle keyboard polling no longer repeatedly queries/hides UI frames.
+
 - (AI chat) Local single-human chat now uses a controlled input field and renders human submissions through Warcraft's native chat with the selected ALL/TEAM channel, instead of leaving every human line in the single-player ALL channel. F12 and LLM recipients use the same selection. Legacy AMAI/zoom commands retain their original handlers; duplicate submissions are filtered.
 
 - (AI chat) Immediately skipped events no longer leave the generation slot permanently occupied. The launch is deferred until its promise has been assigned, so later player messages can still receive replies.

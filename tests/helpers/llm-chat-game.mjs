@@ -11,7 +11,7 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
   const timers = new Map();
   const state = {
     llmActive: true, llmSeq: 1, llmTick: 0, llmLastReply: 0, llmLastVisible: 0,
-    llmSession: '123456789', llmHuman: 0, llmClock: {}, llmRecords: [],
+    llmSession: '123456789', llmHuman: 0, llmClock: {}, llmRecords: [], llmRecordKinds: [],
     llmInputChannel: inputChannel,
     llmInputChoice: '', llmInputOpen: false, llmEnterDown: false, llmInputOpenedAt: 0, llmInputSubmittedAt: -10,
     llmInputLabel: { visible: false, text: '' }, now: 10, keys, frames, meta: 0, key: 'return',
@@ -47,7 +47,7 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     BlzGetLocale: () => 'deDE',
     BlzGetFrameByName: name => frames.get(name) || null,
     LLMActionPoll: () => {},
-    LLMColor: () => 'ffffff', LLMSample: () => {},
+    LLMColor: () => 'ffffff', LLMSampleStep: () => {},
     DisplayTimedTextToPlayer: (player, x, y, duration, text) => { journal.push({ player, duration, text }); overlays.push([player, x, y, duration, text]); },
     BlzDisplayChatMessage: (speaker, channel, text) => shown.push({ speaker, channel, text }),
     GetOwningPlayer: unit => unit.owner, GetUnitTypeId: unit => unit.id, GetUnitName: unit => unit.name,
@@ -56,6 +56,6 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     LLMRecord: (...args) => observed.push(args),
     shown, overlays, observed, journal, preloads,
   };
-  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMInputReady', 'LLMInputHasAlly', 'LLMInputCancel', 'LLMInputFinish', 'LLMInputCloseNative', 'LLMInputPresent', 'LLMInputSelect', 'LLMInputUpdate', 'LLMOnChatKey', 'LLMEnableAlliesMenu', 'LLMPoll', 'LLMProcessHumanText', 'LLMOnChat', 'LLMOnComposerEnter'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
+  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMInputReady', 'LLMInputHasAlly', 'LLMInputCancel', 'LLMInputFinish', 'LLMInputCloseNative', 'LLMInputPresent', 'LLMInputSelect', 'LLMInputUpdate', 'LLMOnChatKey', 'LLMEnableAlliesMenu', 'LLMExportImportant', 'LLMPoll', 'LLMProcessHumanText', 'LLMOnChat', 'LLMOnComposerEnter'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
   return state;
 }

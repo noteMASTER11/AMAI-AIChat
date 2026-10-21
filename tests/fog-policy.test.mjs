@@ -29,13 +29,14 @@ describe('Observer-specific fog of war', () => {
   });
   it('Given a hero hidden from every bot, sampling does not read its inventory or emit its location', () => {
     const game = llmSnapshotGame([{ owner: 0, id: 42, name: 'Hidden hero', hero: true, visibleTo: [] }]);
-    game.LLMSample();
+    game.LLMSample(0);
     assert.equal(game.inventoryReads.length, 0);
     assert.ok(!game.records.some(row => row[2] === 42));
   });
   it('Given a visible enemy hero and hidden building, sampling exports the hero but only its owner reads learned skills', () => {
     const game = llmSnapshotGame([{ owner: 0, id: 42, name: 'Enemy hero', hero: true, visibleTo: [1] }, { owner: 0, id: 43, name: 'Hidden building', building: true, visibleTo: [] }, { owner: 1, id: 44, name: 'Own hero', hero: true, visibleTo: [] }]);
-    game.LLMSample();
+    game.LLMSample(0);
+    game.LLMSample(1);
     assert.ok(game.records.some(row => row[0] === 'sighting' && row[1] === 1 && row[2] === 42));
     assert.ok(!game.records.some(row => row[2] === 43));
     assert.deepEqual(game.skillReads, [44]);
@@ -44,7 +45,7 @@ describe('Observer-specific fog of war', () => {
   it('Given public terrain sites and own troops, the planner receives no enemy assignment or private roster', () => {
     const game = llmSnapshotGame([{owner:1,id:1969711215,name:'Ghoul',visibleTo:[],order:1}]);
     game.llmTick = 10;
-    game.LLMSample();
+    game.LLMSample(1);
     const roster = game.records.filter(row => row[0] === 'own-forces' && row[2] === 1969711215);
     assert.equal(roster.length,1);
     assert.equal(roster[0][1],1);

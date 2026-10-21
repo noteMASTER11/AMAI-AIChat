@@ -36,7 +36,23 @@ endfunction
 
 function LLMRecord takes string kind, integer bot, integer unitType, string unitName, integer level, integer owner, integer killer, string text, string extra returns nothing
     set llmSeq = llmSeq + 1
+    set llmRecordKinds[ModuloInteger(llmSeq, 256)] = kind
     set llmRecords[ModuloInteger(llmSeq, 256)] = "AMAI1|" + llmSession + "|" + I2S(llmSeq) + "|" + R2S(TimerGetElapsed(llmClock)) + "|" + kind + "|" + I2S(bot) + "|" + I2S(llmHuman) + "|" + I2S(unitType) + "|" + LLMEncode(unitName) + "|" + I2S(level) + "|" + I2S(owner) + "|" + I2S(killer) + "|" + LLMEncode(text) + "|" + LLMEncode(extra)
+endfunction
+
+function LLMResetTelemetry takes nothing returns nothing
+    local integer i = 0
+    if llmCache != null then
+        call FlushParentHashtable(llmCache)
+    endif
+    set llmCache = InitHashtable()
+    set llmSampleCursor = 0
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        set llmSampleDue[i] = 0
+        set llmMapSiteDue[i] = 0
+        set i = i + 1
+    endloop
 endfunction
 
 function LLMField takes string s, integer field returns string
@@ -202,7 +218,11 @@ function LLMOwnForces takes integer bot returns nothing
     local integer i = 0
     local integer order
     local integer array types
-    call FlushParentHashtable(llmForceCache)
+    local string current
+    // Clear only the scratch partitions, retaining the usable table itself.
+    call FlushChildHashtable(llmForceCache, 0)
+    call FlushChildHashtable(llmForceCache, 1)
+    call FlushChildHashtable(llmForceCache, 2)
     call GroupEnumUnitsOfPlayer(g, Player(bot), null)
     loop
         set u = FirstOfGroup(g)
@@ -210,22 +230,27 @@ function LLMOwnForces takes integer bot returns nothing
         call GroupRemoveUnit(g, u)
         if not IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitType(u, UNIT_TYPE_DEAD) and GetUnitTypeId(u) != 0 then
             set id = GetUnitTypeId(u)
-            if not HaveSavedInteger(llmForceCache, id, 0) and n < 40 then
+            if not HaveSavedInteger(llmForceCache, 0, id) and n < 40 then
                 set types[n] = id
                 set n = n + 1
-                call SaveStr(llmForceCache, id, 2, GetUnitName(u))
+                call SaveStr(llmForceCache, 2, id, GetUnitName(u))
             endif
-            call SaveInteger(llmForceCache, id, 0, LoadInteger(llmForceCache, id, 0) + 1)
+            call SaveInteger(llmForceCache, 0, id, LoadInteger(llmForceCache, 0, id) + 1)
             set order = GetUnitCurrentOrder(u)
             if order == OrderId("harvest") or order == OrderId("resumeharvesting") or order == OrderId("returnresources") then
-                call SaveInteger(llmForceCache, id, 1, LoadInteger(llmForceCache, id, 1) + 1)
+                call SaveInteger(llmForceCache, 1, id, LoadInteger(llmForceCache, 1, id) + 1)
             endif
         endif
     endloop
     loop
         exitwhen i >= n
         set id = types[i]
-        call LLMRecord("own-forces", bot, id, LoadStr(llmForceCache, id, 2), 0, bot, -1, "own unit roster", "count=" + I2S(LoadInteger(llmForceCache, id, 0)) + ";working=" + I2S(LoadInteger(llmForceCache, id, 1)))
+        set current = "count=" + I2S(LoadInteger(llmForceCache, 0, id)) + ";working=" + I2S(LoadInteger(llmForceCache, 1, id))
+        if LoadStr(llmCache, -(bot + 1), id) != current or TimerGetElapsed(llmClock) - LoadReal(llmCache, -(bot + 1), -id) >= 10 then
+            call LLMRecord("own-forces", bot, id, LoadStr(llmForceCache, 2, id), 0, bot, -1, "own unit roster", current)
+            call SaveStr(llmCache, -(bot + 1), id, current)
+            call SaveReal(llmCache, -(bot + 1), -id, TimerGetElapsed(llmClock))
+        endif
         set i = i + 1
     endloop
     call DestroyGroup(g)
@@ -233,10 +258,9 @@ function LLMOwnForces takes integer bot returns nothing
     set u = null
 endfunction
 
-function LLMSample takes nothing returns nothing
+function LLMSample takes integer owner returns nothing
     local group heroes = CreateGroup()
     local unit u
-    local integer owner = 0
     local integer bot
     local integer key
     local real x
@@ -254,102 +278,126 @@ function LLMSample takes nothing returns nothing
     local real maxlife
     local real homex
     local real homey
-    loop
-        exitwhen owner >= GetBJMaxPlayers()
-        if GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
-            set army = 0
-            set life = 0
-            set maxlife = 0
-            set sightings = 0
-            set homex = GetStartLocationX(GetPlayerStartLocation(Player(owner)))
-            set homey = GetStartLocationY(GetPlayerStartLocation(Player(owner)))
-            call GroupEnumUnitsOfPlayer(heroes, Player(owner), null)
-            loop
-                set u = FirstOfGroup(heroes)
-                exitwhen u == null
-                call GroupRemoveUnit(heroes, u)
-                if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and not IsUnitType(u, UNIT_TYPE_PEON) and not IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitType(u, UNIT_TYPE_DEAD) then
-                    set army = army + 1
-                    set life = life + GetWidgetLife(u)
-                    set maxlife = maxlife + GetUnitState(u, UNIT_STATE_MAX_LIFE)
-                endif
-                if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and IsUnitType(u, UNIT_TYPE_TOWNHALL) and not IsUnitType(u, UNIT_TYPE_DEAD) then
-                    set homex = GetUnitX(u)
-                    set homey = GetUnitY(u)
-                endif
-                if (IsUnitType(u, UNIT_TYPE_HERO) or (IsUnitType(u, UNIT_TYPE_STRUCTURE) and sightings < 12)) and GetUnitTypeId(u) != 0 and not IsUnitType(u, UNIT_TYPE_DEAD) then
-                    set sightings = sightings + 1
-                    set key = GetHandleId(u)
-                    set x = GetUnitX(u)
-                    set y = GetUnitY(u)
+    if GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
+        set army = 0
+        set life = 0
+        set maxlife = 0
+        set sightings = 0
+        set homex = GetStartLocationX(GetPlayerStartLocation(Player(owner)))
+        set homey = GetStartLocationY(GetPlayerStartLocation(Player(owner)))
+        call GroupEnumUnitsOfPlayer(heroes, Player(owner), null)
+        loop
+            set u = FirstOfGroup(heroes)
+            exitwhen u == null
+            call GroupRemoveUnit(heroes, u)
+            if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and not IsUnitType(u, UNIT_TYPE_PEON) and not IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitType(u, UNIT_TYPE_DEAD) then
+                set army = army + 1
+                set life = life + GetWidgetLife(u)
+                set maxlife = maxlife + GetUnitState(u, UNIT_STATE_MAX_LIFE)
+            endif
+            if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and IsUnitType(u, UNIT_TYPE_TOWNHALL) and not IsUnitType(u, UNIT_TYPE_DEAD) then
+                set homex = GetUnitX(u)
+                set homey = GetUnitY(u)
+            endif
+            if (IsUnitType(u, UNIT_TYPE_HERO) or (IsUnitType(u, UNIT_TYPE_STRUCTURE) and sightings < 12)) and GetUnitTypeId(u) != 0 and not IsUnitType(u, UNIT_TYPE_DEAD) then
+                set sightings = sightings + 1
+                set key = GetHandleId(u)
+                set x = GetUnitX(u)
+                set y = GetUnitY(u)
+                set inventory = ""
 
-                    set bot = 0
-                    loop
-                        exitwhen bot >= GetBJMaxPlayers()
-                        if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(bot)) == PLAYER_SLOT_STATE_PLAYING and (owner == bot or (IsUnitVisible(u, Player(bot)) and not IsUnitInvisible(u, Player(bot)) and not IsUnitHidden(u))) then
+                set bot = 0
+                loop
+                    exitwhen bot >= GetBJMaxPlayers()
+                    if GetPlayerController(Player(bot)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(bot)) == PLAYER_SLOT_STATE_PLAYING and (owner == bot or (IsUnitVisible(u, Player(bot)) and not IsUnitInvisible(u, Player(bot)) and not IsUnitHidden(u))) then
+                        set dx = x - LoadReal(llmCache, key, bot * 16 + 8)
+                        set dy = y - LoadReal(llmCache, key, bot * 16 + 9)
+                        if not HaveSavedReal(llmCache, key, bot * 16 + 5) or dx * dx + dy * dy >= 409600 or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 16 + 5) >= 10 then
                             call LLMRecord("sighting", bot, GetUnitTypeId(u), GetUnitName(u), 0, owner, -1, "observed", "x=" + R2S(x) + ";y=" + R2S(y) + ";unit=" + I2S(key) + ";observed=1")
-                            if IsUnitType(u, UNIT_TYPE_HERO) then
+                            call SaveReal(llmCache, key, bot * 16 + 5, TimerGetElapsed(llmClock))
+                            call SaveReal(llmCache, key, bot * 16 + 8, x)
+                            call SaveReal(llmCache, key, bot * 16 + 9, y)
+                        endif
+                        if IsUnitType(u, UNIT_TYPE_HERO) then
+                            if inventory == "" then
                                 set inventory = LLMInventory(u)
-                                set dx = x - LoadReal(llmCache, key, bot * 8 + 1)
-                                set dy = y - LoadReal(llmCache, key, bot * 8 + 2)
-                                if not HaveSavedReal(llmCache, key, bot * 8 + 1) or dx * dx + dy * dy >= 409600 or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 8) >= 15 then
-                                    call LLMRecord("position", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, GetHeroProperName(u), "x=" + R2S(x) + ";y=" + R2S(y) + ";unit=" + I2S(key))
-                                    call SaveReal(llmCache, key, bot * 8 + 1, x)
-                                    call SaveReal(llmCache, key, bot * 8 + 2, y)
-                                    call SaveReal(llmCache, key, bot * 8, TimerGetElapsed(llmClock))
+                            endif
+                            set dx = x - LoadReal(llmCache, key, bot * 16 + 1)
+                            set dy = y - LoadReal(llmCache, key, bot * 16 + 2)
+                            if not HaveSavedReal(llmCache, key, bot * 16 + 1) or dx * dx + dy * dy >= 409600 or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 16) >= 15 then
+                                call LLMRecord("position", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, GetHeroProperName(u), "x=" + R2S(x) + ";y=" + R2S(y) + ";unit=" + I2S(key))
+                                call SaveReal(llmCache, key, bot * 16 + 1, x)
+                                call SaveReal(llmCache, key, bot * 16 + 2, y)
+                                call SaveReal(llmCache, key, bot * 16, TimerGetElapsed(llmClock))
+                            endif
+                            if LoadStr(llmCache, key, bot * 16 + 3) != inventory or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 16 + 6) >= 60 then
+                                set refresh = "false"
+                                if LoadStr(llmCache, key, bot * 16 + 3) == inventory then
+                                    set refresh = "true"
                                 endif
-                                if LoadStr(llmCache, key, bot * 8 + 3) != inventory or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 8 + 6) >= 60 then
-                                    set refresh = "false"
-                                    if LoadStr(llmCache, key, bot * 8 + 3) == inventory then
-                                        set refresh = "true"
-                                    endif
-                                    call LLMRecord("inventory", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, inventory, "unit=" + I2S(key) + ";proper=" + GetHeroProperName(u) + ";refresh=" + refresh)
-                                    call SaveStr(llmCache, key, bot * 8 + 3, inventory)
-                                    call SaveReal(llmCache, key, bot * 8 + 6, TimerGetElapsed(llmClock))
-                                endif
-                                if owner == bot then
-                                    set skills = LLMAbilities(u)
-                                    if LoadStr(llmCache, key, bot * 8 + 4) != skills or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 8 + 7) >= 60 then
-                                        call LLMRecord("abilities", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, skills, "unit=" + I2S(key) + ";proper=" + GetHeroProperName(u))
-                                        call SaveStr(llmCache, key, bot * 8 + 4, skills)
-                                        call SaveReal(llmCache, key, bot * 8 + 7, TimerGetElapsed(llmClock))
-                                    endif
+                                call LLMRecord("inventory", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, inventory, "unit=" + I2S(key) + ";proper=" + GetHeroProperName(u) + ";refresh=" + refresh)
+                                call SaveStr(llmCache, key, bot * 16 + 3, inventory)
+                                call SaveReal(llmCache, key, bot * 16 + 6, TimerGetElapsed(llmClock))
+                            endif
+                            if owner == bot then
+                                set skills = LLMAbilities(u)
+                                if LoadStr(llmCache, key, bot * 16 + 4) != skills or TimerGetElapsed(llmClock) - LoadReal(llmCache, key, bot * 16 + 7) >= 60 then
+                                    call LLMRecord("abilities", bot, GetUnitTypeId(u), GetUnitName(u), GetHeroLevel(u), owner, -1, skills, "unit=" + I2S(key) + ";proper=" + GetHeroProperName(u))
+                                    call SaveStr(llmCache, key, bot * 16 + 4, skills)
+                                    call SaveReal(llmCache, key, bot * 16 + 7, TimerGetElapsed(llmClock))
                                 endif
                             endif
                         endif
-                        set bot = bot + 1
-                    endloop
-                endif
-            endloop
-        endif
-        if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
-            if maxlife < 1 then
-                set maxlife = 1
-            endif
-            call LLMRecord("self-state", owner, 0, "own home/state", 0, owner, -1, "private", "x=" + R2S(homex) + ";y=" + R2S(homey) + ";army=" + I2S(army) + ";health=" + R2S(life / maxlife) + ";gold=" + I2S(GetPlayerState(Player(owner), PLAYER_STATE_RESOURCE_GOLD)) + ";lumber=" + I2S(GetPlayerState(Player(owner), PLAYER_STATE_RESOURCE_LUMBER)) + ";unit=0")
-        endif
-        if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
-            call LLMOwnForces(owner)
-            if ModuloInteger(llmTick, 120) == 10 then
-                set site = 0
-                loop
-                    exitwhen site >= GetPlayers()
-                    set x = GetStartLocationX(site)
-                    set y = GetStartLocationY(site)
-                    set explored = 0
-                    if not IsMaskedToPlayer(x, y, Player(owner)) then
-                        set explored = 1
                     endif
-                    call LLMRecord("map-site", owner, site, "public map start site", 0, 27, -1, "occupancy unknown", "x=" + R2S(x) + ";y=" + R2S(y) + ";site=" + I2S(site) + ";explored=" + I2S(explored))
-                    set site = site + 1
+                    set bot = bot + 1
                 endloop
             endif
+        endloop
+    endif
+    if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
+        if maxlife < 1 then
+            set maxlife = 1
         endif
-        set owner = owner + 1
-    endloop
+        call LLMRecord("self-state", owner, 0, "own home/state", 0, owner, -1, "private", "x=" + R2S(homex) + ";y=" + R2S(homey) + ";army=" + I2S(army) + ";health=" + R2S(life / maxlife) + ";gold=" + I2S(GetPlayerState(Player(owner), PLAYER_STATE_RESOURCE_GOLD)) + ";lumber=" + I2S(GetPlayerState(Player(owner), PLAYER_STATE_RESOURCE_LUMBER)) + ";unit=0")
+    endif
+    if GetPlayerController(Player(owner)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING then
+        call LLMOwnForces(owner)
+        if TimerGetElapsed(llmClock) >= llmMapSiteDue[owner] then
+            set llmMapSiteDue[owner] = TimerGetElapsed(llmClock) + 60
+            set site = 0
+            loop
+                exitwhen site >= GetPlayers()
+                set x = GetStartLocationX(site)
+                set y = GetStartLocationY(site)
+                set explored = 0
+                if not IsMaskedToPlayer(x, y, Player(owner)) then
+                    set explored = 1
+                endif
+                call LLMRecord("map-site", owner, site, "public map start site", 0, 27, -1, "occupancy unknown", "x=" + R2S(x) + ";y=" + R2S(y) + ";site=" + I2S(site) + ";explored=" + I2S(explored))
+                set site = site + 1
+            endloop
+        endif
+    endif
     call DestroyGroup(heroes)
     set heroes = null
     set u = null
+endfunction
+
+// One owner per transport tick, with a five-second minimum revisit interval.
+function LLMSampleStep takes nothing returns nothing
+    local integer checked = 0
+    local integer owner
+    loop
+        exitwhen checked >= GetBJMaxPlayers()
+        set owner = llmSampleCursor
+        set llmSampleCursor = ModuloInteger(llmSampleCursor + 1, GetBJMaxPlayers())
+        if GetPlayerSlotState(Player(owner)) == PLAYER_SLOT_STATE_PLAYING and TimerGetElapsed(llmClock) >= llmSampleDue[owner] then
+            set llmSampleDue[owner] = TimerGetElapsed(llmClock) + 5
+            call LLMSample(owner)
+            return
+        endif
+        set checked = checked + 1
+    endloop
 endfunction
 
 function LLMOnTelemetry takes nothing returns nothing
@@ -647,15 +695,14 @@ function LLMInputUpdate takes nothing returns nothing
     endif
     // Also sample key edges: native chat takes keyboard focus and can suppress
     // key triggers, including Escape. Do not change routes while composing.
-    if BlzIsKeyPressed(OSKEY_ESCAPE) or not LLMInputReady() then
-        call LLMInputCancel()
+    if llmInputOpen then
+        if BlzIsKeyPressed(OSKEY_ESCAPE) or not LLMInputReady() then
+            call LLMInputCancel()
+        endif
     elseif down and not llmEnterDown then
         call LLMInputSelect(BlzIsKeyPressed(OSKEY_LSHIFT) or BlzIsKeyPressed(OSKEY_RSHIFT))
     endif
     set llmEnterDown = down
-    if not llmComposerActive and llmInputLabel != null and TimerGetElapsed(llmClock) - llmInputOpenedAt > 4.0 then
-        call BlzFrameSetVisible(llmInputLabel, false)
-    endif
 endfunction
 
 function LLMInputStart takes nothing returns nothing
@@ -682,7 +729,7 @@ function LLMInputStart takes nothing returns nothing
     endif
     call LLMInputCancel()
     set llmEnterDown = BlzIsKeyPressed(OSKEY_RETURN)
-    call TimerStart(llmInputTimer, 0.03, true, function LLMInputUpdate)
+    call TimerStart(llmInputTimer, 0.05, true, function LLMInputUpdate)
 endfunction
 
 // Single-player disables this native button even with computer allies. Restore
@@ -709,6 +756,10 @@ function LLMEnableAlliesMenu takes nothing returns nothing
     set allies = null
 endfunction
 
+function LLMExportImportant takes string kind returns boolean
+    return kind == "chat" or kind == "death" or kind == "revive" or kind == "skill" or kind == "research" or kind == "action-status" or kind == "hello"
+endfunction
+
 function LLMPoll takes nothing returns nothing
     local integer first
     local integer i
@@ -721,6 +772,8 @@ function LLMPoll takes nothing returns nothing
     local string text
     local string channel
     local integer chatMode
+    local integer retained = 0
+    local integer importantFrom
     if not llmActive then
         return
     endif
@@ -758,13 +811,23 @@ function LLMPoll takes nothing returns nothing
             endif
         endif
     endif
-    if ModuloInteger(llmTick, 10) == 0 then
-        call LLMSample()
-    endif
+    call LLMSampleStep()
     set first = llmSeq - 255
     if first < 1 then
         set first = 1
     endif
+    // Keep a compact overlapping tail and pin older important events without
+    // rewriting the whole 256-event ring on every half-second heartbeat.
+    set importantFrom = llmSeq - 63
+    set i = llmSeq - 64
+    loop
+        exitwhen i < first or retained >= 32
+        if LLMExportImportant(llmRecordKinds[ModuloInteger(i, 256)]) then
+            set importantFrom = i
+            set retained = retained + 1
+        endif
+        set i = i - 1
+    endloop
     call PreloadGenClear()
     call PreloadGenStart()
     call Preload("AMAI1|" + llmSession + "|0|" + R2S(TimerGetElapsed(llmClock)) + "|tick|-1|" + I2S(llmHuman) + "|" + I2S(llmTick) + "|roster-v4|0|-1|-1||" + I2S(llmLastReply) + "," + I2S(llmLastVisible) + "," + BlzGetLocale())
@@ -781,7 +844,9 @@ function LLMPoll takes nothing returns nothing
     set i = first
     loop
         exitwhen i > llmSeq
-        call Preload(llmRecords[ModuloInteger(i, 256)])
+        if i >= llmSeq - 63 or (i >= importantFrom and LLMExportImportant(llmRecordKinds[ModuloInteger(i, 256)])) then
+            call Preload(llmRecords[ModuloInteger(i, 256)])
+        endif
         set i = i + 1
     endloop
     call PreloadGenEnd("AMAI-LLM\\events.pld")
@@ -809,7 +874,7 @@ function LLMSetEnabled takes boolean enabled returns nothing
         set llmLastReply = 0
         set llmLastVisible = 0
         set llmInputChannel = "auto"
-        call FlushParentHashtable(llmCache)
+        call LLMResetTelemetry()
         set llmActive = true
         call LLMInputStart()
         call LLMRecord("hello", -1, 0, "", 0, llmHuman, -1, "local-melee", GetPlayerName(Player(llmHuman)))

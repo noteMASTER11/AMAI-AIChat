@@ -22,6 +22,10 @@
     string llmForwardedChat = ""
     string llmSession = ""
     string array llmRecords
+    string array llmRecordKinds
+    integer llmSampleCursor = 0
+    real array llmSampleDue
+    real array llmMapSiteDue
     timer llmClock = null
     timer llmPoll = null
     hashtable llmCache = null
