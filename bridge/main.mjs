@@ -1,3 +1,4 @@
+import { ActionController, actionCandidates, disclosureContext, makeAction } from './actions.mjs';
 import { readFile, writeFile, rename, mkdir, stat, readdir, unlink, open } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +72,8 @@ const lastComment = new Map();
 const relationshipsFile = path.join(config.runtime, 'relationships.json');
 const relationships = new Relationships(await readFile(relationshipsFile, 'utf8').then(JSON.parse).catch(() => null));
 const observations = new Observations();
+let actions = new ActionController(inbox.session, previousState?.actions);
+let publishedActionPoll = -1;
 
 async function writeState() {
   const now = Date.now();
@@ -78,16 +81,16 @@ async function writeState() {
   cpuPercent = (cpu.user + cpu.system) / Math.max(1, now - cpuSampleAt) / 10;
   cpuPrevious = process.cpuUsage(); cpuSampleAt = now;
   const state = {
-    schema: 1, updatedAt: new Date(now).toISOString(), pid: process.pid, uptimeSeconds: process.uptime(),
+    schema: 1, knowledgePolicy: 3, actions: actions.toJSON(), updatedAt: new Date(now).toISOString(), pid: process.pid, uptimeSeconds: process.uptime(),
     model: config.model, effort: config.effort, mode, modelReady, verified, session: inbox.session, sequence: inbox.last,
     history: history.slice(-256),
     recentDialogue: dialogue.toJSON(),
     languagePreferences: languages.toJSON(),
-    transport: { poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
+    transport: { collectorVersion: tick?.unitName ?? null, poll: tick?.unitType ?? null, gameSeconds: tick?.time ?? null, lastHeartbeatAt: tick?.wall ?? null, acknowledgedPoll: tick ? parseAcknowledgement(tick.extra).poll : null, probe, attempts, pendingFiles: pendingReplies.size },
     bots: [...bots.values()], queue: scheduler.queue.map(e => ({ session: e.session, seq: e.seq, kind: e.kind, bot: e.bot, text: e.text, expires: e.expires })),
     human,
     activeRequest, memory: process.memoryUsage(), cpuPercent,
-    relationships: { session: inbox.session, pairs: relationships.sessions.get(inbox.session) || {} },
+    relationships: { session: inbox.session, pairs: relationships.sessions.get(inbox.session) || {}, personalities: Object.fromEntries([...bots.keys()].map(id => [id, relationships.personality(inbox.session, id)])) },
     observations: [...observations.latest.values()],
     settings: { globalCooldownMs: config.globalCooldownMs, botCooldownMs: config.botCooldownMs, timeoutMs: config.timeoutMs, eventTtlMs: config.eventTtlMs, chatTtlMs: config.chatTtlMs },
     cooldowns: { globalUntil: Number.isFinite(scheduler.lastGlobal) ? scheduler.lastGlobal + config.globalCooldownMs : null, bots: Object.fromEntries([...scheduler.lastBot].map(([id, at]) => [id, at + config.botCooldownMs])) },
@@ -123,6 +126,16 @@ async function publish(event, bot, text, route = { channel: 'all', recipient: -1
   dialogue.add({ ...delivery, kind: 'reply' });
 }
 
+async function publishAction(task) {
+  if (!tick || Date.now() - tick.wall > 3000 || task.session !== inbox.session || task.expires <= tick.time + 2) { task.status = 'rejected'; task.reason = 'no-live-heartbeat'; return; }
+  const poll = Math.max(tick.unitType + 4, publishedActionPoll + 1);
+  const deadline = Math.min(task.expires, tick.time + 10);
+  const filename = path.join(config.mailbox, `action-${task.session}-${poll}.pld`);
+  await writeFile(filename + '.tmp', makeAction(task, poll, deadline)); await rename(filename + '.tmp', filename);
+  publishedActionPoll = poll; pendingReplies.set(filename, Date.now() + 12000);
+  log('action-published', { ...task, poll });
+}
+
 async function generateOne(event) {
   const bot = bots.get(event.bot);
   let shown = false;
@@ -135,16 +148,28 @@ async function generateOne(event) {
     let audience = audienceFor(bot, bots, human);
     if (event.kind === 'chat') audience = audience.filter(p => p.slot === human.slot);
     if (event.kind === 'bot-chat') audience = audience.filter(p => p.slot === event.sourceBot);
+    if (!['chat', 'bot-chat', 'death', 'revive'].includes(event.kind) && event.owner === bot.slot) audience = audience.filter(p => p.relation === 'ally');
     if (!audience.length) { outcome = 'silent'; return; }
-    const context = { ...event, audience, humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience), recentDialogue: dialogue.forBot(bot.slot), languagePreferences: languages.forBot(bot.slot) };
-    const answer = await client.generate(context, bot, historyFor(bot.slot, history));
+    let context = { ...event, audience, temperament: relationships.personality(event.session, bot.slot), privateOwners: bot.allies, activeTask: actions.tasks.findLast(t => t.bot === bot.slot), humanSlot: human.slot, observations: observations.forBot(bot.slot, event.time), relationships: relationships.forBot(event.session, bot.slot, audience), recentDialogue: dialogue.forBot(bot.slot), languagePreferences: languages.forBot(bot.slot) };
+    let observedHistory = historyFor(bot.slot, history);
+    if (['chat', 'bot-chat'].includes(event.kind) && tick?.unitName === 'roster-v3') {
+      const planning = await client.generate({ ...context, informationTrust: actions.trust[`${bot.slot}:${event.sourceBot ?? human.slot}`] || 0, actionCandidates: actionCandidates(bot.slot, context.observations, event.time) }, bot, observedHistory, true);
+      if (!running || event.session !== inbox.session || !scheduler.isCurrent(event, Date.now())) { outcome = 'expired'; return; }
+      const result = actions.propose(planning.intent, { event, bot, human: human.slot, observations: context.observations, relationship: relationships.get(event.session, bot.slot, event.sourceBot ?? human.slot) });
+      log('action-decision', { session: event.session, seq: event.seq, bot: bot.slot, ...result });
+      if (result.accepted) await publishAction(result.task);
+      context = { ...context, actionOutcome: result };
+    }
+    const disclosed = disclosureContext(context, observedHistory, context.recentDialogue);
+    context = { ...disclosed.event, recentDialogue: disclosed.dialogue };
+    const answer = await client.generate(context, bot, disclosed.history);
     if (answer.shortened) log('reply-shortened', { session: event.session, seq: event.seq, bot: bot.slot, originalBytes: answer.originalBytes, outputBytes: Buffer.byteLength(answer.text, 'utf8'), text: answer.text });
     if (!running || event.session !== inbox.session) { outcome = 'expired'; return; }
     languages.accept(event, answer, human.slot);
     const previousCoefficient = relationships.get(event.session, bot.slot, answer.relationshipTarget);
     const coefficient = relationships.apply(event.session, bot.slot, answer.requestId, answer);
     await writeFile(relationshipsFile + '.tmp', JSON.stringify(relationships)); await rename(relationshipsFile + '.tmp', relationshipsFile);
-    log('event-assessment', { session: event.session, seq: event.seq, bot: bot.slot, valence: answer.valence, target: answer.relationshipTarget, impact: answer.relationshipImpact ?? null, requestedDelta: answer.relationshipDelta, previousCoefficient, delta: Math.round((coefficient - previousCoefficient) * 10000) / 10000, coefficient, curve: answer.relationshipImpact === undefined ? 'legacy' : 'exponential-v1', requestId: answer.requestId });
+    log('event-assessment', { session: event.session, seq: event.seq, bot: bot.slot, valence: answer.valence, target: answer.relationshipTarget, impact: answer.relationshipImpact ?? null, requestedDelta: answer.relationshipDelta, previousCoefficient, delta: Math.round((coefficient - previousCoefficient) * 10000) / 10000, coefficient, curve: answer.relationshipImpact === undefined ? 'legacy' : 'exponential-personality-v2', temperament: relationships.personality(event.session, bot.slot), requestId: answer.requestId });
     if (answer.silent || !answer.text) { outcome = 'silent'; return; }
     const repeated = repeatedReply(answer.text, dialogue.ownForBot(bot.slot));
     if (repeated) {
@@ -199,10 +224,11 @@ try {
           if (heartbeat) {
             if (scheduler.session !== inbox.session) {
               scheduler.reset(inbox.session); bots.clear(); history = []; observations.clear(); awaitingDelivery.clear(); lastComment.clear(); verified = false; probe = null; attempts = 0; publishedPoll = -1;
-              if (previousState?.session === inbox.session) for (const event of previousState.observations || []) observations.add(event);
-              if (previousState?.session === inbox.session) history = (previousState.history || []).slice(-256);
+              if (previousState?.knowledgePolicy === 3 && previousState?.session === inbox.session) for (const event of previousState.observations || []) observations.add(event);
+              if (previousState?.knowledgePolicy === 3 && previousState?.session === inbox.session) history = (previousState.history || []).slice(-256);
               if (dialogue.session !== inbox.session) dialogue.reset(inbox.session);
               if (languages.session !== inbox.session) languages.reset(inbox.session);
+              actions = new ActionController(inbox.session, previousState?.actions); publishedActionPoll = -1;
               log('game-session', { session: inbox.session });
             }
             tick = { ...heartbeat, wall: info.mtimeMs };
@@ -235,6 +261,14 @@ try {
               if (event.kind !== 'chat' && (event.kind !== 'bot' || event.seq !== 0)) log('game-event', event);
               if (event.kind === 'off') { tick = null; scheduler.reset(null); bots.clear(); continue; }
               if (event.kind === 'bot') { bots.set(event.bot, { ...personas[event.bot % personas.length], slot: event.bot, name: event.text, race: event.unitType, allies: alliesFrom(event.extra) || [event.bot] }); continue; }
+              if (event.kind === 'action-status') {
+                const task = actions.acknowledge(event);
+                if (task) {
+                  log('action-status', task); history.push(event);
+                  if (verified && ['completed', 'rejected', 'cancelled', 'expired'].includes(task.status)) scheduler.add(event, Date.now());
+                }
+                continue;
+              }
               if (event.kind === 'hello') { human.name = event.extra || 'Игрок'; history.push(event); continue; }
               if (event.kind === 'chat') {
                 const allies = [...bots.values()].filter(bot => bot.allies.includes(human.slot)).map(bot => bot.slot);
@@ -259,6 +293,8 @@ try {
                 lastComment.set(key, Date.now());
               }
             }
+            actions.expire(heartbeat.time);
+            for (const bot of bots.values()) relationships.initialize(inbox.session, bot.slot, [human.slot, ...bots.keys()]);
             history = history.slice(-256);
           }
         }
@@ -274,13 +310,13 @@ try {
         await client.start(); modelReady = true; lastLimitsRead = Date.now();
         log('llm-active', 'Only generated conversations; AMAI template chat is muted.');
       }
-      if (verified && mode === 'llm' && modelReady && !generation && tick && Date.now() - tick.wall < 3000) {
+      if (verified && mode === 'llm' && modelReady && !generation && tick?.unitName === 'roster-v3' && Date.now() - tick.wall < 3000) {
         const event = scheduler.take(Date.now());
         if (event) generation = generateOne(event);
       }
       if (Date.now() - lastCleanup > 30000) {
         lastCleanup = Date.now();
-        for (const name of await readdir(config.mailbox)) if (/^reply-\d+-\d+\.pld(?:\.tmp)?$/.test(name)) {
+        for (const name of await readdir(config.mailbox)) if (/^(?:reply|action)-\d+-\d+\.pld(?:\.tmp)?$/.test(name)) {
           const file = path.join(config.mailbox, name);
           if (Date.now() - (await stat(file)).mtimeMs > 60000) await unlink(file);
         }

@@ -117,6 +117,13 @@ function TrackTown takes integer num returns boolean
   local boolean found_expansion = false
   local boolean previously_had_expansion = town_has_expansion[num]
   
+  if Player(town_owner[num]) != ai_player and num < town_num and not IsVisibleToPlayer(GetLocationX(town_loc[num]), GetLocationY(town_loc[num]), ai_player) then
+    call DestroyGroup(g)
+    call RemoveLocation(l)
+    set g = null
+    set l = null
+    return true
+  endif
   set town_value[num] = 0
   set town_count[num] = 0
   set town_has_expansion[num] = false
@@ -145,7 +152,7 @@ function TrackTown takes integer num returns boolean
   loop
     set u = FirstOfGroup(g)
     exitwhen u == null
-    if UnitAlive(u) and GetUnitState(u, UNIT_STATE_LIFE) > 0 and GetOwningPlayer(u) == Player(town_owner[num]) and IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitInGroup(u, in_town_group) and (GetOwningPlayer(u) != ai_player or num == town_num or GetTrackedStructureTown(u) == num) then
+    if (GetOwningPlayer(u) == ai_player or IsUnitVisible(u, ai_player)) and UnitAlive(u) and GetUnitState(u, UNIT_STATE_LIFE) > 0 and GetOwningPlayer(u) == Player(town_owner[num]) and IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitInGroup(u, in_town_group) and (GetOwningPlayer(u) != ai_player or num == town_num or GetTrackedStructureTown(u) == num) then
       call GroupAddUnit(in_town_group, u)
       if GetOwningPlayer(u) == ai_player then
         call GroupAddUnit(town_structures[num], u)
@@ -254,7 +261,7 @@ function SeedNewTownsForPlayer takes integer p returns nothing
   loop
     set u = FirstOfGroup(g)
     exitwhen u == null
-    if (IsUnitType(u, UNIT_TYPE_TOWNHALL) or IsUnitGoldMine(u)) and UnitAlive(u) and not IsUnitInGroup(u, in_town_group) then
+    if (Player(p) == ai_player or IsUnitVisible(u, ai_player)) and (IsUnitType(u, UNIT_TYPE_TOWNHALL) or IsUnitGoldMine(u)) and UnitAlive(u) and not IsUnitInGroup(u, in_town_group) then
       call SeedNewTownAtLoc(GetUnitLoc(u), p)
     endif
     call GroupRemoveUnit(g, u)
@@ -264,7 +271,7 @@ function SeedNewTownsForPlayer takes integer p returns nothing
   loop
     set u = FirstOfGroup(g)
     exitwhen u == null
-    if IsUnitType(u, UNIT_TYPE_STRUCTURE) and UnitAlive(u) and not IsUnitInGroup(u, in_town_group) then
+    if (Player(p) == ai_player or IsUnitVisible(u, ai_player)) and IsUnitType(u, UNIT_TYPE_STRUCTURE) and UnitAlive(u) and not IsUnitInGroup(u, in_town_group) then
       call SeedNewTownAtLoc(GetUnitLoc(u), p)
     endif
     call GroupRemoveUnit(g, u)

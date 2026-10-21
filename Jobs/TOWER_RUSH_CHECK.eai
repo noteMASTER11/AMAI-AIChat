@@ -120,11 +120,11 @@ function TowerRushCheck takes nothing returns nothing
 				set u = I2U(GetStoredInteger(amaiCache, Int2Str(ALLIANCE_TARGET), "0"))
 			endif
 		endif
-		if u != null then  //coordinate towertush with allies , 480 second
+		if u != null and IsUnitVisible(u, ai_player) then  //coordinate towertush with allies , 480 second
 			set p = GetOwningPlayer(u)
 			if IsPlayerEnemy(p, ai_player) and p != Player(PLAYER_NEUTRAL_AGGRESSIVE) then
 				set rushedplayer = p
-				set toweringplayerloc = GetStartLocationLoc(GetPlayerStartLocation(rushedplayer))
+				set toweringplayerloc = GetUnitLoc(u)
 				set race_tower_alliancetarget = true
 				set builder[10] = null
 			endif
@@ -141,25 +141,26 @@ function TowerRushCheck takes nothing returns nothing
 				call Trace("TowerRushCheck: no stored ALLIANCE_TARGET")
 			endif
 		endif
-		// Fallback: if no builder unit (e.g. not a team game), try nearest enemy player start
+		// Fallback: if no builder unit (e.g. not a team game), try a visible enemy building
 		if u == null and builder[10] == null then
 			set p = GetNearestEnemy()
 			if p != null then
 				set rushedplayer = p
-				set toweringplayerloc = GetStartLocationLoc(GetPlayerStartLocation(rushedplayer))
-				call Trace("TowerRushCheck: fallback - using nearest enemy start location for rushedplayer=" + Int2Str(GetPlayerId(rushedplayer)))
+				set u = GetObservedBuilding(p)
+                if u != null then
+                    set toweringplayerloc = GetUnitLoc(u)
+                endif
+                set u = null
+				call Trace("TowerRushCheck: fallback - using observed enemy building for rushedplayer=" + Int2Str(GetPlayerId(rushedplayer)))
 			endif
 		endif
-		if toweringplayerloc == null and builder[10] != null then
+		if toweringplayerloc == null and builder[10] != null and IsUnitVisible(builder[10], ai_player) then
 			set toweringplayerloc = GetUnitLoc(builder[10])  // builder[10] from the GetNearestEnemyDistance
 		endif
 	endif
 	if toweringplayerloc != null then
-		if GetPlayerRace(rushedplayer) == RACE_NIGHTELF and GetPlayerStructureCount(rushedplayer, true) < 6 then
-			set tower_target_loc = GetLocationInDistanceFromLoc(toweringplayerloc, 780, true)  // ELF can be closer
-		else
-			set tower_target_loc = GetLocationInDistanceFromLoc(toweringplayerloc, front_base_distance, true)  //DistanceBetweenPoints the toweringplayerloc and first_tower_point , front_base_distance now is change , so need set new
-		endif
+		// Hidden structure totals cannot justify a closer approach.
+		set tower_target_loc = GetLocationInDistanceFromLoc(toweringplayerloc, front_base_distance, true)
 		if tower_target_loc != null then
 			set racial_rushcreep = 0  // TowerRush BR , waste time
 			set enemy_point_x = GetLocationX(toweringplayerloc)

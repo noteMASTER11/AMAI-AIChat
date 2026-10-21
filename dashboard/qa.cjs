@@ -33,6 +33,9 @@ const out = path.join(__dirname, 'evidence'); fs.mkdirSync(out, { recursive: tru
       return (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05);
     });
     assert.ok(contrast >= 4.5, `Conversation contrast ${contrast}`);
+    await page.getByRole('heading', { name: 'Характер на старте', exact: false }).waitFor();
+    assert.ok(await page.locator('#actions-panel').getByText('running', { exact: true }).count());
+    assert.ok(await page.getByText('Токсичный', { exact: false }).count());
     await page.screenshot({ path: path.join(out, 'desktop-demo.png') });
     await page.getByRole('button', { name: 'Запросы', exact: false }).click();
     assert.ok(await page.locator('.request-list tbody tr').count() > 0);

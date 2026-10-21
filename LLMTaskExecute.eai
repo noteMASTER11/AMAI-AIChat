@@ -1,0 +1,150 @@
+// Runs inside the normal attack thread: no additional AI threads and no model-controlled micro.
+function LLMTaskScout takes real x, real y, real deadline returns string
+  local group g = CreateGroup()
+  local unit u = null
+  local unit scout = null
+  local string result = "no-scout"
+    call GroupEnumUnitsOfPlayer(g, ai_player, null)
+  loop
+    set u = FirstOfGroup(g)
+    exitwhen u == null
+    call GroupRemoveUnit(g, u)
+    if UnitAlive(u) and not IsUnitHidden(u) and not IsUnitType(u, UNIT_TYPE_PEON) and not IsUnitType(u, UNIT_TYPE_HERO) and not IsUnitType(u, UNIT_TYPE_STRUCTURE) and not IsUnitType(u, UNIT_TYPE_SUMMONED) and (IsUnitType(u, UNIT_TYPE_ATTACKS_GROUND) or IsUnitType(u, UNIT_TYPE_ATTACKS_FLYING)) and not IsUnitInGroup(u, unit_harassing) and not IsUnitInGroup(u, unit_healing) and GetUnitState(u, UNIT_STATE_LIFE) > 0.8 * GetUnitState(u, UNIT_STATE_MAX_LIFE) then
+      set scout = u
+      exitwhen true
+    endif
+  endloop
+  call DestroyGroup(g)
+  set g = null
+  if scout != null then
+    call GroupAddUnit(unit_harassing, scout)
+    call RemoveGuardPosition(scout)
+    call IssuePointOrder(scout, "move", x, y)
+    set result = "deadline"
+    loop
+      exitwhen not UnitAlive(scout) or break_attack or town_threatened or not llm_chat_enabled
+      exitwhen GetStoredReal(llmActionCache, "clock", "now") > deadline
+      if IsVisibleToPlayer(x, y, ai_player) then
+        if GetLocationEnemyStrength(x, y, 700, false) > 0 then
+          set result = "confirmed"
+        else
+          set result = "empty"
+        endif
+        exitwhen true
+      endif
+      if GetUnitState(scout, UNIT_STATE_LIFE) < 0.5 * GetUnitState(scout, UNIT_STATE_MAX_LIFE) then
+        set result = "scout-retreated"
+        exitwhen true
+      endif
+      call Sleep(1)
+    endloop
+    if UnitAlive(scout) then
+      call IssuePointOrder(scout, "move", GetLocationX(home_location), GetLocationY(home_location))
+      call RecycleGuardPosition(scout)
+    endif
+    call GroupRemoveUnit(unit_harassing, scout)
+  endif
+  set u = null
+  set scout = null
+  return result
+endfunction
+
+function LLMTaskExecute takes nothing returns boolean
+  local integer id = llmTaskId
+  local integer action = llmTaskAction
+  local real deadline = llmTaskExpires
+  local real x = llmTaskX
+  local real y = llmTaskY
+  local real now = GetStoredReal(llmActionCache, "clock", "now")
+  local string result = "deadline"
+  local integer status = 6
+  if id == 0 then
+    return false
+  endif
+  if not llm_chat_enabled or now > deadline then
+    call LLMTaskReport(id, 6, "deadline-or-disabled")
+    set llmTaskId = 0
+    return false
+  endif
+  set break_attack = false
+  // Stale moving targets are investigated at their fixed last-seen point.
+  if (action == 4 or action == 6) and now - llmTaskObserved > 6 then
+    set action = 5
+  endif
+  if (action == 4 or action == 6) and GetLocationEnemyStrength(x, y, 1000, false) > GetOwnStrength() * 1.4 then
+    call LLMTaskReport(id, 4, "outmatched")
+    set llmTaskId = 0
+    return true
+  endif
+  call LLMTaskReport(id, 2, "started")
+  if action == 5 then
+    set result = LLMTaskScout(x, y, deadline)
+    if result == "confirmed" or result == "empty" then
+      set status = 3
+    elseif result == "no-scout" then
+      set status = 4
+    endif
+  else
+    call FromGroupAndGhoulsAM(0)
+    loop
+      exitwhen GetStoredReal(llmActionCache, "clock", "now") > deadline
+      if llmTaskId != id or break_attack or (town_threatened and action != 1) or (not llm_chat_enabled) then
+        set status = 5
+        set result = "interrupted"
+        exitwhen true
+      endif
+      if CaptainIsEmpty() then
+        set status = 4
+        set result = "army-unavailable"
+        exitwhen true
+      endif
+      if action == 1 then
+        call CaptainGoHome()
+        if CaptainIsHome() then
+          set status = 3
+          set result = "home"
+          exitwhen true
+        endif
+      else
+        call CaptainAttack(x, y)
+        if CaptainAtGoal() then
+          set status = 3
+          set result = "point-reached"
+          exitwhen true
+        endif
+      endif
+      call Sleep(1)
+    endloop
+  endif
+  // A newer transaction owns the slot; never erase it from an interrupted task.
+  if llmTaskId == id then
+    call LLMTaskReport(id, status, result)
+    set llmTaskId = 0
+  endif
+  return true
+endfunction
+
+// With no visible enemy base, explore public map start sites rather than real player assignments.
+function LLMExplore takes nothing returns nothing
+  local real now = GetStoredReal(llmActionCache, "clock", "now")
+  local real x = 0
+  local real y = 0
+  local string result = ""
+  if not llm_chat_enabled or now < 45 or now < llmExploreNext or town_threatened or no_attack or CaptainInCombat(true) then
+    return
+  endif
+  set llmExploreNext = now + 60
+  if GetNearestEnemyToLoc_k(home_location) != null then
+    return
+  endif
+  set llmExploreSite = llmExploreSite + 1
+  if llmExploreSite >= GetBJMaxPlayers() then
+    set llmExploreSite = 0
+  endif
+  set x = GetStartLocationX(llmExploreSite)
+  set y = GetStartLocationY(llmExploreSite)
+  if not IsVisibleToPlayer(x, y, ai_player) then
+    set break_attack = false
+    set result = LLMTaskScout(x, y, now + 30)
+  endif
+endfunction

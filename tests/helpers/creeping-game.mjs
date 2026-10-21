@@ -19,6 +19,8 @@ export function creepingGame() {
     h_siege: false, own_strength: 0, battle_radius: 1500,
     attacking_expansion: false, take_exp: true,
     GetHeroLevel: hero => hero.level, UnitAlive: unit => unit.alive,
+    LLMTaskExecute: () => false,
+    LLMExplore: () => {},
     Trace() {}, Sleep() {}, set_aggression() {}, Int2Str: String,
     CheckExpansionTaken: () => false,
     GetExpFoe: () => ({ alive: true }),

@@ -13,7 +13,7 @@ export function demoSnapshot() {
   bots[0].allies = [1, 3]; bots[1].allies = [0, 2]; bots[2].allies = [1, 3];
   const observations = [
     { session, seq: 78, kind: 'inventory', bot: 2, owner: 0, unitType: 1010, unitName: 'Рыцарь смерти', time: 1120, text: '1:Сапоги-скороходы [charges=0]; 2:Свиток телепортации [charges=1]; 3:Когти атаки +6; 4:empty; 5:empty; 6:empty', extra: 'unit=42' },
-    { session, seq: 79, kind: 'abilities', bot: 2, owner: 0, unitType: 1010, unitName: 'Рыцарь смерти', time: 1120, text: 'Аура смерти [level=2]; Лик смерти [level=2]', extra: 'unit=42' },
+    { session, seq: 79, kind: 'abilities', bot: 2, owner: 2, unitType: 1010, unitName: 'Рыцарь смерти', time: 1120, text: 'Аура смерти [level=2]; Лик смерти [level=2]', extra: 'unit=42' },
   ];
   add(920, 'bridge-start', { pid: 21480, model: 'gpt-6.1-sol', effort: 'low', mode: 'llm' });
   add(910, 'game-session', session);
@@ -42,7 +42,7 @@ export function demoSnapshot() {
   add(3, 'reply-acknowledged', { session, poll: 2248, visible: false, delayMs: 1000 });
   return {
     records: store.records, summary: store.summary(now),
-    state: { updatedAt: new Date(now).toISOString(), pid: 21480, uptimeSeconds: 924, model: 'gpt-6.1-sol', effort: 'low', mode: 'llm', modelReady: true, verified: true, session, bots, human: { slot: 0, name: 'Ты' }, observations, relationships: { session, pairs: { '1:0': -0.35, '2:0': 0.52, '1:3': 0.3, '3:1': 0.12, '2:1': -0.7 } }, queue: [{ seq: 77, kind: 'chat', bot: 3, text: 'А где мой эксп?', expires: now + 22000 }], activeRequest: { seq: 76, bot: 2, kind: 'death', startedAt: now - 2000 }, transport: { poll: 2254, gameSeconds: 1127, lastHeartbeatAt: now - 118, acknowledgedPoll: 2241, attempts: 1, pendingFiles: 0 }, memory: { rss: 52211712, heapUsed: 15308288 }, cpuPercent: 0.8, settings: { globalCooldownMs: 8000, botCooldownMs: 20000, timeoutMs: 20000, eventTtlMs: 20000, chatTtlMs: 45000 }, cooldowns: { globalUntil: now + 2500, bots: { 1: now + 14000 } } },
+    state: { knowledgePolicy: 3, actions: { tasks: [{ id: 1, bot: 2, source: 0, created: 1100, expires: 1150, observedAt: 1100, action: 'defend', status: 'running', reason: 'started', x: 512, y: 1024 }], trust: { '2:0': 0.2 } }, updatedAt: new Date(now).toISOString(), pid: 21480, uptimeSeconds: 924, model: 'gpt-6.1-sol', effort: 'low', mode: 'llm', modelReady: true, verified: true, session, bots, human: { slot: 0, name: 'Ты' }, observations, relationships: { session, personalities: { 1: { label: 'toxic', temperament: -0.8, positiveGain: 0.4, negativeGain: 1.6 }, 2: { label: 'friendly', temperament: 0.6, positiveGain: 1.45, negativeGain: 0.55 } }, pairs: { '1:0': -0.35, '2:0': 0.52, '1:3': 0.3, '3:1': 0.12, '2:1': -0.7 } }, queue: [{ seq: 77, kind: 'chat', bot: 3, text: 'А где мой эксп?', expires: now + 22000 }], activeRequest: { seq: 76, bot: 2, kind: 'death', startedAt: now - 2000 }, transport: { poll: 2254, gameSeconds: 1127, lastHeartbeatAt: now - 118, acknowledgedPoll: 2241, attempts: 1, pendingFiles: 0 }, memory: { rss: 52211712, heapUsed: 15308288 }, cpuPercent: 0.8, settings: { globalCooldownMs: 8000, botCooldownMs: 20000, timeoutMs: 20000, eventTtlMs: 20000, chatTtlMs: 45000 }, cooldowns: { globalUntil: now + 2500, bots: { 1: now + 14000 } } },
     health: { alive: true, snapshotAgeMs: 50, gameAgeMs: 118, error: null },
     installation: { status: 'installed', at: new Date(now - 1200000).toISOString() },
     limits: { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 10080, resetsAt: Math.floor(now / 1000) + 86400 * 4 } } },

@@ -1,7 +1,7 @@
 import { unlink } from 'node:fs/promises';
 
 const sessionPattern = /^\d{6,18}$/;
-const kinds = new Set(['hello', 'tick', 'bot', 'chat', 'death', 'revive', 'off', 'move', 'position', 'build-start', 'build-finish', 'build-cancel', 'upgrade-start', 'upgrade-finish', 'upgrade-cancel', 'research', 'level', 'skill', 'abilities', 'item-pickup', 'item-drop', 'item-use', 'item-buy', 'item-sell', 'inventory']);
+const kinds = new Set(['sighting', 'self-state', 'action-status', 'hello', 'tick', 'bot', 'chat', 'death', 'revive', 'off', 'move', 'position', 'build-start', 'build-finish', 'build-cancel', 'upgrade-start', 'upgrade-finish', 'upgrade-cancel', 'research', 'level', 'skill', 'abilities', 'item-pickup', 'item-drop', 'item-use', 'item-buy', 'item-sell', 'inventory']);
 const decode = s => s.replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 export function replyWindow(event, tick, now, delayMs) {
   if (!Number.isFinite(event.expires) || event.expires <= now + delayMs) throw new Error('Reply expired before its game poll');

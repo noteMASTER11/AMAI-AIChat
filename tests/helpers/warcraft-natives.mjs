@@ -1,6 +1,8 @@
 // Shared Set-backed group operations. Enumeration and unit policies are game-specific.
 export function groupNatives(activeGroups) {
   return {
+    IsUnitVisible: unit => unit?.visible !== false,
+    GetOwningPlayer: unit => unit?.owner ?? 0,
     CreateGroup() {
       const group = new Set();
       activeGroups?.add(group);

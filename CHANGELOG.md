@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI) Foreign army/town tracking, strength estimates, hidden-target pursuit and enemy base selection now use visible or previously observed information rather than hidden unit state and actual enemy start assignments.
+- (AI chat) Allied status alone no longer exposes private research, learned hero abilities or unseen inventory. Public enemy replies receive a redacted voice context without own-team construction, inventory, team conversations or internal plans.
+
 - (AI chat) F12 mirror entries now have a positive 0.01-second screen lifetime. A zero duration left large duplicate messages above chat in Warcraft 3.0.1; the journal entry remains after its screen lifetime ends.
 - (AI chat) Recent dialogue has its own bounded memory and context priority, so frequent position/inventory snapshots cannot erase a bot's previous lines. Exact and close lexical repeats are suppressed; unchanged inventory does not trigger another comment. Dialogue recovers from the current session's journal after a bridge restart.
 - (AI chat) A generated reply can wait for a fresh game heartbeat within its original deadline, instead of failing immediately when the local match is paused or loses focus. The console shows `WAIT GAME` while delivery waits.
@@ -16,6 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - (Monitoring) Large telemetry snapshots no longer trigger a reconnect loop. The live stream waits for its output buffer to drain and catches up with journal entries; internal restart history is no longer duplicated in every dashboard update.
 
 ### Added
+
+- (AI) Typed chat goals for retreat, rally, defense, known-point attack/focus and single-unit reconnaissance, with source/target validation, expiry, home-defense priority, execution acknowledgements and separate information trust. Old sightings trigger reconnaissance rather than tracking a hidden moving unit. Map/AI transport remains subject to live-match verification.
+- (AI chat) Persistent per-match temperament, randomized directed starting affinity and asymmetric positive/negative relationship sensitivity. Toxic bots resist praise; friendly bots resist insults.
+- (AI chat) Separate PLAN and VOICE requests with bounded independent text chunks; terminology and tone instructions informed by a user-supplied community export, without including raw chat or personal data.
+- (Monitoring) Task decisions/status timeline, information trust, starting temperament and relationship response multipliers.
+- (Installer) One-shot script/bridge update after Warcraft exits; the current match can finish on its loaded version.
 
 - (AI chat) Human messages and visible bot replies are mirrored to the single-player F12 journal with game time, sender color/name and channel. Hidden enemy team conversations remain excluded; control commands and repeated delivery polls do not add duplicate dialogue entries.
 - (AI chat) Local single-human JASS melee matches can use contextual Russian bot conversations through Codex App Server with GPT-6.1 Sol and low effort. Bots can address players or other bots; allied conversations use team channels, with one bounded followup per exchange.

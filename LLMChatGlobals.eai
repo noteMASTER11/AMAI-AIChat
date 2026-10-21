@@ -10,3 +10,6 @@
     timer llmClock = null
     timer llmPoll = null
     hashtable llmCache = null
+    gamecache llmActionCache = InitGameCache("AMAI_ChatActions.w3v")
+    integer array llmActionId
+    integer array llmActionStatus

@@ -1,0 +1,57 @@
+// Command 95 carries a mailbox transaction ID; all fields are numeric and ID is written last.
+// Status: 1 accepted, 2 running, 3 completed, 4 rejected, 5 cancelled, 6 expired.
+function LLMTaskReset takes nothing returns nothing
+  if llmTaskId > 0 then
+    set break_attack = true
+  endif
+  set llmTaskId = 0
+  set llmTaskLast = 0
+  set llmTaskAction = 0
+endfunction
+
+function LLMTaskReport takes integer id, integer status, string reason returns nothing
+  local string key = Int2Str(GetAiPlayer())
+  call StoreString(llmActionCache, key, "out-reason", reason)
+  call StoreInteger(llmActionCache, key, "out-status", status)
+  call StoreInteger(llmActionCache, key, "out-id", id)
+endfunction
+
+function LLMTaskReceive takes integer id returns nothing
+  local string key = Int2Str(GetAiPlayer())
+  local integer action = GetStoredInteger(llmActionCache, key, "action")
+  local integer source = GetStoredInteger(llmActionCache, key, "source")
+  local integer owner = GetStoredInteger(llmActionCache, key, "owner")
+  local real now = GetStoredReal(llmActionCache, "clock", "now")
+  local real expires = GetStoredReal(llmActionCache, key, "expires")
+  local boolean allied = false
+  if not llm_chat_enabled or id <= llmTaskLast or id != GetStoredInteger(llmActionCache, key, "id") then
+    return
+  endif
+  set llmTaskLast = id
+  if source < 0 or source >= 24 or owner < 0 or owner >= 28 or action < 1 or action > 6 or now <= 0 or expires <= now or expires > now + 95 then
+    call LLMTaskReport(id, 4, "invalid-or-expired")
+    return
+  endif
+  set allied = IsPlayerAlly(ai_player, Player(source)) and IsPlayerAlly(Player(source), ai_player)
+  if (not allied and (action < 4 or owner != source)) or ((action == 4 or action == 6) and IsPlayerAlly(ai_player, Player(owner))) then
+    call LLMTaskReport(id, 4, "source-or-target-rejected")
+    return
+  endif
+  if town_threatened and action != 1 and action != 3 then
+    call LLMTaskReport(id, 4, "home-threatened")
+    return
+  endif
+  if llmTaskId > 0 then
+    call LLMTaskReport(llmTaskId, 5, "replaced")
+  endif
+  set llmTaskId = id
+  set llmTaskAction = action
+  set llmTaskX = GetStoredReal(llmActionCache, key, "x")
+  set llmTaskY = GetStoredReal(llmActionCache, key, "y")
+  set llmTaskExpires = expires
+  set llmTaskObserved = GetStoredReal(llmActionCache, key, "observed")
+  set llmTaskOwner = owner
+  set llmTaskSource = source
+  set break_attack = true
+  call LLMTaskReport(id, 1, "validated")
+endfunction

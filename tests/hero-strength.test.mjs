@@ -206,8 +206,8 @@ for (const version of ['ROC', 'TFT', 'REFORGED']) {
 
       assert.equal(game.strength(), 0);
       assert.equal(game.state.GetUnitStrength(ownHero), 0);
-      assert.equal(game.state.GetPlayerStrength(1), 2.75);
-      assert.equal(game.state.GetUnitStrength(enemyHero), 2.75);
+      assert.equal(game.state.GetPlayerStrength(1), 2);
+      assert.equal(game.state.GetUnitStrength(enemyHero), 2);
     });
 
     it('Fractional hero and troop contributions combine before the own-strength integer boundary', () => {

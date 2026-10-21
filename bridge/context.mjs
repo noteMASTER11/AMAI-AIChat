@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 const slot = value => Number.isInteger(value) && value >= 0 && value < 24;
+const draw = seed => createHash('sha256').update(seed).digest().readUInt32BE(0) / 0x100000000;
 const bounded = (value, low, high) => typeof value === 'number' && Number.isFinite(value) && value >= low && value <= high;
 export function relationshipChange(impact) {
   if (!bounded(impact, -1, 1)) throw new Error('Invalid relationship impact');
@@ -16,15 +18,37 @@ export function validateAssessment(value, targets) {
 export class Relationships {
   sessions = new Map();
   seen = new Set();
+  personalities = new Map();
   constructor(saved) {
-    if (saved?.schema !== 1) return;
+    if (![1, 2].includes(saved?.schema)) return;
     for (const [session, pairs] of saved.sessions || []) {
       if (!/^\d{6,18}$/.test(session) || !pairs || typeof pairs !== 'object') continue;
       const valid = Object.fromEntries(Object.entries(pairs).filter(([key, coefficient]) => /^\d+:\d+$/.test(key) && key.split(':').map(Number).every(slot) && bounded(coefficient, -1, 1)));
       this.sessions.set(session, valid);
     }
     this.seen = new Set((saved.seen || []).filter(v => typeof v === 'string').slice(-4000));
+    for (const [key, value] of saved.personalities || []) {
+      if (/^\d{6,18}:\d+$/.test(key) && bounded(value?.temperament, -1, 1) && bounded(value?.positiveGain, 0.25, 1.75) && bounded(value?.negativeGain, 0.25, 1.75)) this.personalities.set(key, value);
+    }
   }
+  initialize(session, bot, targets) {
+    if (!/^\d{6,18}$/.test(session) || !slot(bot)) throw new Error('Invalid personality identity');
+    const key = `${session}:${bot}`;
+    if (!this.personalities.has(key)) {
+      const temperament = Math.round((draw(key + ':temperament') * 2 - 1) * 1000) / 1000;
+      this.personalities.set(key, { temperament, label: temperament < -0.3 ? 'toxic' : temperament > 0.3 ? 'friendly' : 'reserved', positiveGain: Math.round((1 + 0.75 * temperament) * 1000) / 1000, negativeGain: Math.round((1 - 0.75 * temperament) * 1000) / 1000 });
+    }
+    const personality = this.personality(session, bot);
+    const pairs = this.sessions.get(session) || {};
+    for (const target of targets) if (slot(target) && target !== bot && pairs[`${bot}:${target}`] === undefined) {
+      pairs[`${bot}:${target}`] = Math.round(Math.max(-0.7, Math.min(0.7, personality.temperament * 0.5 + (draw(`${key}:${target}:affinity`) - 0.5) * 0.3)) * 10000) / 10000;
+    }
+    this.sessions.set(session, pairs);
+    while (this.sessions.size > 8) this.sessions.delete(this.sessions.keys().next().value);
+    for (const key of this.personalities.keys()) if (!this.sessions.has(key.split(':')[0])) this.personalities.delete(key);
+    return personality;
+  }
+  personality(session, bot) { return this.personalities.get(`${session}:${bot}`) || { temperament: 0, label: 'reserved', positiveGain: 1, negativeGain: 1 }; }
   get(session, bot, target) { return this.sessions.get(session)?.[`${bot}:${target}`] || 0; }
   forBot(session, bot, audience) { return audience.map(player => ({ slot: player.slot, name: player.name, alliance: player.relation, coefficient: this.get(session, bot, player.slot) })); }
   apply(session, bot, requestId, assessment) {
@@ -38,18 +62,20 @@ export class Relationships {
     if (this.seen.size > 4000) this.seen.delete(this.seen.values().next().value);
     if (target < 0 || validated.relationshipDelta === 0) return previous;
     const pairs = this.sessions.get(session) || {};
-    const next = Math.round(Math.max(-1, Math.min(1, previous + validated.relationshipDelta)) * 10000) / 10000;
+    const personality = this.personality(session, bot);
+    const gain = validated.relationshipDelta > 0 ? personality.positiveGain : personality.negativeGain;
+    const next = Math.round(Math.max(-1, Math.min(1, previous + validated.relationshipDelta * gain)) * 10000) / 10000;
     pairs[`${bot}:${target}`] = next;
     this.sessions.set(session, pairs);
     if (this.sessions.size > 8) this.sessions.delete(this.sessions.keys().next().value);
     return next;
   }
-  toJSON() { return { schema: 1, sessions: [...this.sessions], seen: [...this.seen] }; }
+  toJSON() { return { schema: 2, sessions: [...this.sessions], seen: [...this.seen], personalities: [...this.personalities] }; }
 }
 export class Observations {
   latest = new Map();
   add(event) {
-    if (!['inventory', 'abilities', 'position', 'skill', 'level'].includes(event.kind)) return;
+    if (!['inventory', 'abilities', 'position', 'skill', 'level', 'sighting', 'self-state'].includes(event.kind)) return;
     const unit = /(?:^|;)unit=(\d+)/.exec(event.extra || '')?.[1] || `${event.owner}:${event.unitType}`;
     const key = `${event.bot}:${unit}:${event.kind}`;
     const previous = this.latest.get(key);

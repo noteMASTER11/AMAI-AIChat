@@ -62,7 +62,7 @@ export function strengthGame(version) {
   }
   const categories = [...source.matchAll(/^function GetPlayer(\w+)Strength takes player p returns real/gm)]
     .map(([, category]) => category).filter(category => category !== 'AntiAir');
-  const names = ['GetHeroAbilityStrength', 'GetHeroStrength', 'GetPlayerHeroStrengthMod',
+  const names = ['GetObservedUnitTypeCount', 'GetHeroAbilityStrength', 'GetHeroStrength', 'GetPlayerHeroStrengthMod',
     'GetUnitStrengthEx', 'IsUnitTower', 'GetPlayerStrengthHandicap', 'GetUnitStrength',
     'GetPlayerStrength', 'GetOwnStrength', 'AttackGroupAddUnknown', ...categories.map(c => 'GetPlayer' + c + 'Strength')];
   vm.runInContext([...new Set(names)].map(name => compile(source, name)).join('\n'), vm.createContext(state));

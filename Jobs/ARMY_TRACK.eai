@@ -88,8 +88,11 @@ endfunction
 // Share eligibility with seeding so rejected units do not start range scans.
 function IsArmyUnit takes unit u, player owner returns boolean
   local integer order = 0
-  if GetOwningPlayer(u) != owner or not UnitAlive(u) or IsUnitInGroup(u, in_army_group) or IsUnitType(u, UNIT_TYPE_STRUCTURE) or IsUnitType(u, UNIT_TYPE_PEON) or not IsStandardUnit(u) or IsUnitBuying(u) then
+  if (owner != ai_player and not IsUnitVisible(u, ai_player)) or GetOwningPlayer(u) != owner or not UnitAlive(u) or IsUnitInGroup(u, in_army_group) or IsUnitType(u, UNIT_TYPE_STRUCTURE) or IsUnitType(u, UNIT_TYPE_PEON) or not IsStandardUnit(u) or IsUnitBuying(u) then
     return false
+  endif
+  if owner != ai_player then
+    return true
   endif
   set order = GetUnitCurrentOrder(u)
   return order != OrderId("harvest") and order != OrderId("resumeharvesting")
@@ -107,7 +110,7 @@ function TrackArmy takes integer num returns boolean
   local integer scanned = 0
   
   set u = FirstOfGroup(army_group[num])
-  if u != null then
+  if u != null and (owner == ai_player or IsUnitVisible(u, ai_player)) then
     // If tracking existing army select range from current position not historic position
     call GroupEnumUnitsInRange(g, GetUnitX(u), GetUnitY(u), army_radius, null)
   else
@@ -310,7 +313,7 @@ function GetLiveTownDefenseValue takes integer num returns integer
   loop
     set u = FirstOfGroup(g)
     exitwhen u == null
-    if UnitAlive(u) and GetOwningPlayer(u) == Player(town_owner[num]) and IsUnitType(u, UNIT_TYPE_STRUCTURE) then
+    if (GetOwningPlayer(u) == ai_player or IsUnitVisible(u, ai_player)) and UnitAlive(u) and GetOwningPlayer(u) == Player(town_owner[num]) and IsUnitType(u, UNIT_TYPE_STRUCTURE) then
       if IsUnitType(u, UNIT_TYPE_TOWNHALL) or GetUnitTypeId(u) == old_id[racial_expansion] then
         if town_defense_anchor[num] == null or IsUnitType(u, UNIT_TYPE_TOWNHALL) then
           set town_defense_anchor[num] = u

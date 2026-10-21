@@ -90,6 +90,6 @@ describe('Local LLM chat channel and observation boundaries', () => {
     game.LLMObserve('research', hero, 1, 'upgrade', '', true);
 
     assert.deepEqual(game.observed.filter(row => row[0] === 'inventory').map(row => row[1]), [1]);
-    assert.deepEqual(game.observed.filter(row => row[0] === 'research').map(row => row[1]), [1, 3]);
+    assert.deepEqual(game.observed.filter(row => row[0] === 'research').map(row => row[1]), [1]);
   });
 });

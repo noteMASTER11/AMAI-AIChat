@@ -6,6 +6,7 @@ const source = readFileSync(new URL('../../common.eai', import.meta.url), 'utf8'
 export function neutralGame(playerCount) {
   const unexpected = () => { throw new Error('Neutral player data was queried'); };
   const state = {
+    ai_player: 0, IsUnitVisible: () => true,
     player_race: zeros(), race_aggression: zeros(), race_name: ['Unknown', 'Human'],
     p_str_cache: zeros(), p_str_cache_timeout: zeros(), ai_time: 10, p_str_cache_valid_time: 5,
     difficulty: 2, HARD: 2, tiernum: 3, tier: 2,

@@ -32,7 +32,14 @@ function GetHarassExpansionTarget takes unit ru, unit u returns unit
   local group g = CreateGroup()
   local location unitloc = GetUnitLoc(u)
   local player p = GetNearestEnemyToLoc_k(unitloc)  
-  local location baseloc = GetPlayerStartLocationLoc(p)
+  local location baseloc = null
+  local unit knownhall = GetObservedBuilding(p)
+  if knownhall != null then
+    set baseloc = GetUnitLoc(knownhall)
+  else
+    set baseloc = GetUnitLoc(u)
+  endif
+  set knownhall = null
   call GroupEnumUnitsOfPlayer(g, p, null)
   set g = SelectUnittype(g, UNIT_TYPE_TOWNHALL, true)
   set g = SelectByLocation(g, baseloc, 1000, false)
@@ -66,7 +73,14 @@ function GetHarassMainHallTarget takes unit ru, unit u returns unit
   local group g = CreateGroup()
   local location unitloc = GetUnitLoc(u)
   local player p = GetNearestEnemyToLoc_k(unitloc)  
-  local location baseloc = GetPlayerStartLocationLoc(p)
+  local location baseloc = null
+  local unit knownhall = GetObservedBuilding(p)
+  if knownhall != null then
+    set baseloc = GetUnitLoc(knownhall)
+  else
+    set baseloc = GetUnitLoc(u)
+  endif
+  set knownhall = null
 
   call GroupEnumUnitsOfPlayer(g, p, null)
   set g = SelectUnittype(g, UNIT_TYPE_TOWNHALL, true)
@@ -210,7 +224,7 @@ function HarassJob takes integer key, unit target returns nothing
       loop
         set u = FirstOfGroup(g)
         exitwhen u == null
-        if UnitAlive(u) and not IsUnitHidden(u) and IsPlayerEnemy(ai_player, GetOwningPlayer(u)) and GetUnitStrength(u) > 0 then
+        if UnitAlive(u) and IsUnitVisible(u, ai_player) and not IsUnitHidden(u) and IsPlayerEnemy(ai_player, GetOwningPlayer(u)) and GetUnitStrength(u) > 0 then
           set enemycount = enemycount + 1
         endif
         call GroupRemoveUnit(g, u)
@@ -238,6 +252,10 @@ function HarassJob takes integer key, unit target returns nothing
       set hu = null
       return
     endif
+  endif
+
+  if target != null and not IsUnitVisible(target, ai_player) then
+    set target = null
   endif
 
   if target != null and (IsUnitHidden(target) or IsUnitLoaded(target) or (IsUnitInvisibleAM(target, ai_player))) then	// Checks to see if unit is not targetable and after small period will change to target it can hit
@@ -281,7 +299,7 @@ function HarassJob takes integer key, unit target returns nothing
     loop
       set u = FirstOfGroup(g)
       exitwhen u == null
-      if UnitAlive(u) and not IsUnitHidden(u) and IsPlayerEnemy(ai_player, GetOwningPlayer(u)) and GetOwningPlayer(u) != Player(PLAYER_NEUTRAL_AGGRESSIVE) then
+      if UnitAlive(u) and IsUnitVisible(u, ai_player) and not IsUnitHidden(u) and IsPlayerEnemy(ai_player, GetOwningPlayer(u)) and GetOwningPlayer(u) != Player(PLAYER_NEUTRAL_AGGRESSIVE) then
         if IsUnitTower(u) and avoiding_towers and ((allair and IsUnitType(u, UNIT_TYPE_ATTACKS_FLYING)) or not allair) then
           set towersdetected = true
         endif

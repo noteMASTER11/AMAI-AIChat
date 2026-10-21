@@ -24,11 +24,13 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     I2S: String, R2S: String, ModuloInteger: (a, b) => a % b,
     PreloadGenClear: () => {}, PreloadGenStart: () => {}, PreloadGenEnd: () => {}, Preload: text => preloads.push(text),
     BlzGetLocale: () => 'deDE',
+    LLMActionPoll: () => {},
     LLMColor: () => 'ffffff', LLMSample: () => {},
     DisplayTimedTextToPlayer: (player, x, y, duration, text) => { journal.push({ player, duration, text }); overlays.push([player, x, y, duration, text]); },
     BlzDisplayChatMessage: (speaker, channel, text) => shown.push({ speaker, channel, text }),
     GetOwningPlayer: unit => unit.owner, GetUnitTypeId: unit => unit.id, GetUnitName: unit => unit.name,
     IsUnitVisible: (unit, bot) => unit.visibleTo.includes(bot),
+    IsUnitInvisible: () => false, IsUnitHidden: () => false,
     LLMRecord: (...args) => observed.push(args),
     shown, overlays, observed, journal, preloads,
   };
