@@ -508,6 +508,30 @@ function LLMActionPoll takes nothing returns nothing
 endfunction
 
 
+// Single-player disables this native button even with computer allies. Restore
+// it alongside the normal menu, without changing alliances or chat handlers.
+function LLMEnableAlliesMenu takes nothing returns nothing
+    local framehandle menu = BlzGetFrameByName("UpperButtonBarMenuButton", 0)
+    local framehandle allies = BlzGetFrameByName("UpperButtonBarAlliesButton", 0)
+    local integer i = 0
+    if menu == null or allies == null then
+        return
+    endif
+    if not BlzFrameGetEnable(menu) or BlzFrameGetEnable(allies) then
+        return
+    endif
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING and IsPlayerAlly(Player(i), Player(llmHuman)) and IsPlayerAlly(Player(llmHuman), Player(i)) then
+            call BlzFrameSetEnable(allies, true)
+            exitwhen true
+        endif
+        set i = i + 1
+    endloop
+    set menu = null
+    set allies = null
+endfunction
+
 function LLMPoll takes nothing returns nothing
     local integer first
     local integer i
@@ -523,6 +547,7 @@ function LLMPoll takes nothing returns nothing
     if not llmActive then
         return
     endif
+    call LLMEnableAlliesMenu()
     set llmTick = llmTick + 1
     call LLMActionPoll()
     set original = BlzGetAbilityTooltip('Amls', 0)

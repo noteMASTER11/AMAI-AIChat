@@ -24,6 +24,7 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     I2S: String, R2S: String, ModuloInteger: (a, b) => a % b,
     PreloadGenClear: () => {}, PreloadGenStart: () => {}, PreloadGenEnd: () => {}, Preload: text => preloads.push(text),
     BlzGetLocale: () => 'deDE',
+    BlzGetFrameByName: () => null,
     LLMActionPoll: () => {},
     LLMColor: () => 'ffffff', LLMSample: () => {},
     DisplayTimedTextToPlayer: (player, x, y, duration, text) => { journal.push({ player, duration, text }); overlays.push([player, x, y, duration, text]); },
@@ -34,6 +35,6 @@ export function llmChatGame({ humanAllied = false, channel = 'team', recipient =
     LLMRecord: (...args) => observed.push(args),
     shown, overlays, observed, journal, preloads,
   };
-  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMPoll', 'LLMOnChat'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
+  vm.runInContext(['LLMEncode', 'LLMField', 'LLMJournal', 'LLMAllies', 'LLMObserve', 'LLMEnableAlliesMenu', 'LLMPoll', 'LLMOnChat'].map(name => compile(source, name)).join('\n'), vm.createContext(state));
   return state;
 }

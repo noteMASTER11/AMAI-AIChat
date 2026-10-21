@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) In local single-human matches with a computer ally, the native Allies button is re-enabled while the normal menu is available. Its built-in dialog and hotkeys are retained; native team-chat behavior still requires verification in Warcraft 3.0.1.
+
 - (AI chat) Automatic input routing now treats ordinary human messages as public even when allied bots exist. Explicit @team or -llm team still selects allied LLM recipients; the unavailable native channel remains marked unknown.
 
 - (AI chat) Human F12 entries no longer guess ALL/TEAM from alliances or bridge settings. They use CHAT; telemetry distinguishes the unknown native game channel from the logical bridge recipient route. Per-message @all/@team overrides now take priority over persistent routing mode.
