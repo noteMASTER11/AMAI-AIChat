@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) Immediately skipped events no longer leave the generation slot permanently occupied. The launch is deferred until its promise has been assigned, so later player messages can still receive replies.
+- (AI chat) Enter now selects allied LLM recipients when an allied computer exists; Shift+Enter selects all bots. Selection is captured when input opens and retained through submission. Escape/menu navigation cancels it; a brief AMAI ALL/TEAM label shows the selected bridge route while native text entry remains in use.
+
 - (AI chat) In local single-human matches with a computer ally, the native Allies button is re-enabled while the normal menu is available. Its built-in dialog and hotkeys are retained; native team-chat behavior still requires verification in Warcraft 3.0.1.
 
 - (AI chat) Automatic input routing now treats ordinary human messages as public even when allied bots exist. Explicit @team or -llm team still selects allied LLM recipients; the unavailable native channel remains marked unknown.

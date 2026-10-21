@@ -5,6 +5,13 @@
     integer llmLastReply = 0
     integer llmLastVisible = 0
     string llmInputChannel = "auto"
+    string llmInputChoice = ""
+    boolean llmInputOpen = false
+    boolean llmEnterDown = false
+    real llmInputOpenedAt = 0
+    real llmInputSubmittedAt = -10
+    timer llmInputTimer = null
+    framehandle llmInputLabel = null
     string llmSession = ""
     string array llmRecords
     timer llmClock = null

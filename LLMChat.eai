@@ -508,6 +508,125 @@ function LLMActionPoll takes nothing returns nothing
 endfunction
 
 
+// Native single-player chat does not expose its actual channel. Capture the
+// opening key instead; the choice belongs to this input, not the submit key.
+function LLMInputReady takes nothing returns boolean
+    local framehandle f = BlzGetFrameByName("UpperButtonBarMenuButton", 0)
+    if not llmActive or llmHuman < 0 or GetPlayerId(GetLocalPlayer()) != llmHuman or not BlzIsLocalClientActive() then
+        return false
+    endif
+    if f == null or not BlzFrameGetEnable(f) then
+        return false
+    endif
+    set f = BlzGetFrameByName("AllianceDialog", 0)
+    if f != null and BlzFrameIsVisible(f) then
+        return false
+    endif
+    set f = BlzGetFrameByName("LogDialog", 0)
+    if f != null and BlzFrameIsVisible(f) then
+        return false
+    endif
+    set f = BlzGetFrameByName("QuestDialog", 0)
+    if f != null and BlzFrameIsVisible(f) then
+        return false
+    endif
+    set f = BlzGetFrameByName("EscMenuBackdrop", 0)
+    if f != null and BlzFrameIsVisible(f) then
+        return false
+    endif
+    set f = null
+    return true
+endfunction
+
+function LLMInputHasAlly takes nothing returns boolean
+    local integer i = 0
+    loop
+        exitwhen i >= GetBJMaxPlayers()
+        if GetPlayerController(Player(i)) == MAP_CONTROL_COMPUTER and GetPlayerSlotState(Player(i)) == PLAYER_SLOT_STATE_PLAYING and IsPlayerAlly(Player(i), Player(llmHuman)) and IsPlayerAlly(Player(llmHuman), Player(i)) then
+            return true
+        endif
+        set i = i + 1
+    endloop
+    return false
+endfunction
+
+function LLMInputCancel takes nothing returns nothing
+    set llmInputOpen = false
+    set llmInputChoice = ""
+    if llmInputLabel != null then
+        call BlzFrameSetVisible(llmInputLabel, false)
+    endif
+endfunction
+
+function LLMInputFinish takes nothing returns nothing
+    call LLMInputCancel()
+    set llmInputSubmittedAt = TimerGetElapsed(llmClock)
+    set llmEnterDown = BlzIsKeyPressed(OSKEY_RETURN)
+endfunction
+
+function LLMInputSelect takes boolean publicChat returns nothing
+    if llmInputOpen or not LLMInputReady() or TimerGetElapsed(llmClock) - llmInputSubmittedAt < 0.25 then
+        return
+    endif
+    set llmInputChoice = "team"
+    if publicChat or not LLMInputHasAlly() then
+        set llmInputChoice = "all"
+    endif
+    set llmInputOpen = true
+    set llmInputOpenedAt = TimerGetElapsed(llmClock)
+    if llmInputLabel != null then
+        if llmInputChoice == "all" then
+            call BlzFrameSetText(llmInputLabel, "|cffffcc00AMAI > ALL|r")
+        else
+            call BlzFrameSetText(llmInputLabel, "|cff66ddaaAMAI > TEAM|r")
+        endif
+        call BlzFrameSetVisible(llmInputLabel, true)
+    endif
+endfunction
+
+function LLMOnChatKey takes nothing returns nothing
+    if not llmActive or GetPlayerId(GetTriggerPlayer()) != llmHuman then
+        return
+    endif
+    if BlzGetTriggerPlayerKey() == OSKEY_ESCAPE then
+        call LLMInputCancel()
+    elseif BlzGetTriggerPlayerKey() == OSKEY_RETURN then
+        set llmEnterDown = true
+        call LLMInputSelect(ModuloInteger(BlzGetTriggerPlayerMetaKey(), 2) == 1)
+    endif
+endfunction
+
+function LLMInputUpdate takes nothing returns nothing
+    local boolean down = BlzIsKeyPressed(OSKEY_RETURN)
+    if not llmActive then
+        return
+    endif
+    // Also sample key edges: native chat takes keyboard focus and can suppress
+    // key triggers, including Escape. Do not change routes while composing.
+    if BlzIsKeyPressed(OSKEY_ESCAPE) or not LLMInputReady() then
+        call LLMInputCancel()
+    elseif down and not llmEnterDown then
+        call LLMInputSelect(BlzIsKeyPressed(OSKEY_LSHIFT) or BlzIsKeyPressed(OSKEY_RSHIFT))
+    endif
+    set llmEnterDown = down
+    if llmInputLabel != null and TimerGetElapsed(llmClock) - llmInputOpenedAt > 4.0 then
+        call BlzFrameSetVisible(llmInputLabel, false)
+    endif
+endfunction
+
+function LLMInputStart takes nothing returns nothing
+    if llmInputLabel == null then
+        set llmInputLabel = BlzCreateFrameByType("TEXT", "AMAIChatRoute", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), "", 0)
+        call BlzFrameSetAbsPoint(llmInputLabel, FRAMEPOINT_BOTTOMLEFT, 0.20, 0.205)
+        call BlzFrameSetSize(llmInputLabel, 0.4, 0.018)
+        call BlzFrameSetFont(llmInputLabel, "Fonts\\FRIZQT__.TTF", 0.012, 0)
+        call BlzFrameSetEnable(llmInputLabel, false)
+    endif
+    call LLMInputCancel()
+    set llmEnterDown = BlzIsKeyPressed(OSKEY_RETURN)
+    call TimerStart(llmInputTimer, 0.03, true, function LLMInputUpdate)
+endfunction
+
 // Single-player disables this native button even with computer allies. Restore
 // it alongside the normal menu, without changing alliances or chat handlers.
 function LLMEnableAlliesMenu takes nothing returns nothing
@@ -634,6 +753,7 @@ function LLMSetEnabled takes boolean enabled returns nothing
         set llmInputChannel = "auto"
         call FlushParentHashtable(llmCache)
         set llmActive = true
+        call LLMInputStart()
         call LLMRecord("hello", -1, 0, "", 0, llmHuman, -1, "local-melee", GetPlayerName(Player(llmHuman)))
         set i = 0
         loop
@@ -653,6 +773,8 @@ function LLMSetEnabled takes boolean enabled returns nothing
         call LLMRecord("off", -1, 0, "", 0, llmHuman, -1, "", "")
         call LLMPoll()
         set llmActive = false
+        call PauseTimer(llmInputTimer)
+        call LLMInputCancel()
         call PauseTimer(llmPoll)
         set i = 0
         loop
@@ -668,6 +790,12 @@ endfunction
 
 function LLMOnChat takes nothing returns nothing
     local string text = GetEventPlayerChatString()
+    local string input = llmInputChannel
+    local string source = "bridge-mode"
+    if llmInputChoice != "" then
+        set input = llmInputChoice
+        set source = "hotkey"
+    endif
     if text == "-llm on" then
         call LLMSetEnabled(true)
     elseif text == "-llm off" then
@@ -677,7 +805,10 @@ function LLMOnChat takes nothing returns nothing
         call DisplayTimedTextToPlayer(Player(llmHuman), 0, 0, 10, "AMAI LLM bridge route: " + llmInputChannel)
     elseif llmActive and GetPlayerId(GetTriggerPlayer()) == llmHuman and SubString(text, 0, 1) != "-" then
         call LLMJournal(Player(llmHuman), "unknown", text)
-        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + llmInputChannel + ";native=unknown")
+        call LLMRecord("chat", -1, 0, "", 0, llmHuman, -1, SubString(text, 0, 450), "input=" + input + ";native=unknown;route-source=" + source)
+    endif
+    if GetPlayerId(GetTriggerPlayer()) == llmHuman then
+        call LLMInputFinish()
     endif
 endfunction
 
@@ -723,17 +854,24 @@ endfunction
 
 function LLMInit takes nothing returns nothing
     local trigger chat = CreateTrigger()
+    local trigger keys = CreateTrigger()
     local trigger hero = CreateTrigger()
     local trigger telemetry = CreateTrigger()
     local integer i = 0
     set llmClock = CreateTimer()
     set llmPoll = CreateTimer()
+    set llmInputTimer = CreateTimer()
     set llmCache = InitHashtable()
     set llmForceCache = InitHashtable()
     call TimerStart(llmClock, 86400, false, null)
     loop
         exitwhen i >= GetBJMaxPlayers()
         call TriggerRegisterPlayerChatEvent(chat, Player(i), "", false)
+        call BlzTriggerRegisterPlayerKeyEvent(keys, Player(i), OSKEY_RETURN, 0, true)
+        call BlzTriggerRegisterPlayerKeyEvent(keys, Player(i), OSKEY_RETURN, 1, true)
+        call BlzTriggerRegisterPlayerKeyEvent(keys, Player(i), OSKEY_RETURN, 2, true)
+        call BlzTriggerRegisterPlayerKeyEvent(keys, Player(i), OSKEY_RETURN, 3, true)
+        call BlzTriggerRegisterPlayerKeyEvent(keys, Player(i), OSKEY_ESCAPE, 0, true)
         call TriggerRegisterPlayerUnitEvent(hero, Player(i), EVENT_PLAYER_UNIT_DEATH, null)
         call TriggerRegisterPlayerUnitEvent(hero, Player(i), EVENT_PLAYER_HERO_REVIVE_FINISH, null)
         call TriggerRegisterPlayerUnitEvent(telemetry, Player(i), EVENT_PLAYER_UNIT_CONSTRUCT_START, null)
@@ -754,10 +892,12 @@ function LLMInit takes nothing returns nothing
         set i = i + 1
     endloop
     call TriggerAddAction(chat, function LLMOnChat)
+    call TriggerAddAction(keys, function LLMOnChatKey)
     call TriggerRegisterPlayerUnitEvent(telemetry, Player(PLAYER_NEUTRAL_PASSIVE), EVENT_PLAYER_UNIT_SELL_ITEM, null)
     call TriggerAddAction(hero, function LLMOnHero)
     call TriggerAddAction(telemetry, function LLMOnTelemetry)
     set chat = null
+    set keys = null
     set hero = null
     set telemetry = null
 endfunction

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { llmChatGame } from './helpers/llm-chat-game.mjs';
+import { routeHumanChat } from '../bridge/conversation.mjs';
 describe('Local LLM chat channel and observation boundaries', () => {
   it('Given a German game client, when polling telemetry, then every heartbeat includes its locale', () => {
     const game = llmChatGame();
@@ -71,7 +72,7 @@ describe('Local LLM chat channel and observation boundaries', () => {
     const game = llmChatGame({ humanAllied: true, inputText: 'держи мейн' });
     game.LLMOnChat();
     assert.match(game.journal[0].text, /\[CHAT\]/);
-    assert.equal(game.observed[0][8], 'input=auto;native=unknown');
+    assert.equal(game.observed[0][8], 'input=auto;native=unknown;route-source=bridge-mode');
 
     const publicGame = llmChatGame({ humanAllied: true, inputText: '@all привет' });
     publicGame.LLMOnChat();
@@ -92,5 +93,67 @@ describe('Local LLM chat channel and observation boundaries', () => {
 
     assert.deepEqual(game.observed.filter(row => row[0] === 'inventory').map(row => row[1]), [1]);
     assert.deepEqual(game.observed.filter(row => row[0] === 'research').map(row => row[1]), [1]);
+  });
+});
+
+describe('Local chat hotkeys select recipients at input opening', () => {
+  it('Enter with a computer ally keeps the message away from enemy LLM contexts', () => {
+    const game = llmChatGame({ humanAllied: true, inputText: 'прикрой базу' });
+    game.keys.add(game.OSKEY_RETURN);
+    game.LLMInputUpdate();
+    game.LLMOnChat();
+
+    const route = routeHumanChat({ text: 'прикрой базу', extra: game.observed[0][8] }, new Map([[1, { slot: 1, allies: [0, 1] }], [2, { slot: 2, allies: [2] }]]), 0);
+    assert.equal(route.channel, 'team');
+    assert.deepEqual(route.recipients, [1]);
+    assert.equal(game.llmInputOpen, false);
+  });
+  it('Shift+Enter stays public even after Shift is released before submission', () => {
+    const game = llmChatGame({ humanAllied: true });
+    game.meta = 1;
+    game.LLMOnChatKey();
+    game.meta = 0;
+    game.keys.clear();
+    game.LLMInputUpdate();
+    game.LLMOnChat();
+
+    assert.match(game.observed[0][8], /^input=all;/);
+  });
+  it('submitting a public message does not reinterpret that same Enter press as a new team input', () => {
+    const game = llmChatGame({ humanAllied: true });
+    game.meta = 1;
+    game.LLMOnChatKey();
+    game.keys.add(game.OSKEY_RETURN);
+    game.LLMOnChat();
+    game.LLMInputUpdate();
+
+    assert.equal(game.llmInputOpen, false);
+    assert.equal(game.llmInputChoice, '');
+  });
+  it('Escape discards the previous channel before another input opens', () => {
+    const game = llmChatGame({ humanAllied: true });
+    game.LLMOnChatKey();
+    assert.equal(game.llmInputChoice, 'team');
+    game.keys.add(game.OSKEY_ESCAPE);
+    game.LLMInputUpdate();
+    assert.equal(game.llmInputChoice, '');
+    game.keys.clear();
+    game.meta = 1;
+    game.LLMOnChatKey();
+
+    assert.equal(game.llmInputChoice, 'all');
+  });
+  it('Enter without a computer ally remains public', () => {
+    const game = llmChatGame();
+    game.LLMOnChatKey();
+    assert.equal(game.llmInputChoice, 'all');
+  });
+  it('menu navigation cannot select a chat route or show its label', () => {
+    const game = llmChatGame({ humanAllied: true });
+    game.frames.set('AllianceDialog', { visible: true });
+    game.LLMOnChatKey();
+
+    assert.equal(game.llmInputOpen, false);
+    assert.equal(game.llmInputLabel.visible, false);
   });
 });

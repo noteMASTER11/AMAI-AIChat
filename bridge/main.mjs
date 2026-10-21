@@ -307,7 +307,8 @@ try {
       }
       if (verified && mode === 'llm' && modelReady && !generation && tick?.unitName === 'roster-v4' && Date.now() - tick.wall < 3000) {
         const event = scheduler.take(Date.now());
-        if (event) generation = generateOne(event);
+        // A synchronous early return must clear the slot after this assignment.
+        if (event) generation = Promise.resolve().then(() => generateOne(event));
       }
       if (Date.now() - lastCleanup > 30000) {
         lastCleanup = Date.now();
