@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- (AI chat) Automatic input routing now treats ordinary human messages as public even when allied bots exist. Explicit @team or -llm team still selects allied LLM recipients; the unavailable native channel remains marked unknown.
+
 - (AI chat) Human F12 entries no longer guess ALL/TEAM from alliances or bridge settings. They use CHAT; telemetry distinguishes the unknown native game channel from the logical bridge recipient route. Per-message @all/@team overrides now take priority over persistent routing mode.
 
 - (AI) Foreign army/town tracking, strength estimates, hidden-target pursuit and enemy base selection now use visible or previously observed information rather than hidden unit state and actual enemy start assignments.

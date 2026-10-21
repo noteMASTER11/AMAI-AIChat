@@ -18,8 +18,8 @@ export function routeHumanChat(event, bots, humanSlot) {
   const allies = [...bots.values()].filter(bot => bot.allies.includes(humanSlot)).map(bot => bot.slot);
   const prefix = /^@(all|team)\s+/i.exec(event.text)?.[1].toLowerCase();
   const mode = /(?:^|;)input=(all|team|auto)(?:;|$)/.exec(event.extra || '')?.[1] || 'auto';
-  const channel = prefix || (mode !== 'auto' ? mode : allies.length ? 'team' : 'all');
-  return { text: event.text.replace(/^@(all|team)\s+/i, ''), channel, bridgeChannel: channel, nativeChannel: 'unknown', inputChannelSource: prefix ? 'explicit-prefix' : mode === 'auto' ? 'conservative-auto' : 'bridge-mode', recipients: channel === 'team' ? allies : [...bots.keys()] };
+  const channel = prefix || (mode !== 'auto' ? mode : 'all');
+  return { text: event.text.replace(/^@(all|team)\s+/i, ''), channel, bridgeChannel: channel, nativeChannel: 'unknown', inputChannelSource: prefix ? 'explicit-prefix' : mode === 'auto' ? 'public-default' : 'bridge-mode', recipients: channel === 'team' ? allies : [...bots.keys()] };
 }
 export function historyFor(slot, history) {
   return history.filter(event => {

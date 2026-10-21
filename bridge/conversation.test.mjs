@@ -30,12 +30,13 @@ test('bot replies get one addressed, bounded followup only after acknowledgement
   assert.equal(followupFor({ ...reply, purpose: 'probe' }, bots, 1000), null);
 });
 
-test('unknown native chat channel stays unknown when an ally causes conservative bridge routing', () => {
+test('ordinary human messages reach enemies as well as allies without claiming the native channel', () => {
   const route = routeHumanChat({ text: 'удачи всем', extra: 'input=auto;native=unknown' }, bots, 0);
   assert.equal(route.nativeChannel, 'unknown');
-  assert.equal(route.channel, 'team');
-  assert.equal(route.inputChannelSource, 'conservative-auto');
-  assert.deepEqual(route.recipients, [1, 2]);
+  assert.equal(route.channel, 'all');
+  assert.equal(route.inputChannelSource, 'public-default');
+  assert.deepEqual(route.recipients, [1, 2, 3]);
+  assert.deepEqual(routeHumanChat({ text: 'привет' }, bots, 0).recipients, [1, 2, 3]);
 });
 test('one-message route overrides persistent bridge mode without claiming the native channel', () => {
   const team = routeHumanChat({ text: '@team держи мейн', extra: 'input=all;native=unknown' }, bots, 0);
@@ -45,6 +46,8 @@ test('one-message route overrides persistent bridge mode without claiming the na
   assert.equal(all.channel, 'all'); assert.deepEqual(all.recipients, [1, 2, 3]);
   const legacy = routeHumanChat({ text: 'hey', extra: 'input=all' }, bots, 0);
   assert.equal(legacy.channel, 'all'); assert.equal(legacy.nativeChannel, 'unknown');
+  const privateMode = routeHumanChat({ text: 'прикрой', extra: 'input=team' }, bots, 0);
+  assert.equal(privateMode.channel, 'team'); assert.deepEqual(privateMode.recipients, [1, 2]);
 });
 
 test('allied enemy bots are not offered private conversations invisible to the human', () => {
